@@ -1,0 +1,106 @@
+---
+title: Freddie Mac Quarterly Re-Fi
+author: Stuart I. Quinn
+date: '2018-11-23'
+slug: freddie-mac-quarterly-re-fi
+categories: []
+tags: []
+---
+
+
+
+<pre class="r"><code>options(stringsAsFactors = F, scipen = 99)
+
+pks &lt;- c(&quot;ggplot2&quot;, &quot;scales&quot;, &quot;tidyverse&quot;, &quot;stringr&quot;, &quot;readxl&quot;, &quot;lubridate&quot;)
+invisible(lapply(pks, require, character.only = T))</code></pre>
+<div id="mortgage-statistics-on-refinance-volume" class="section level2">
+<h2>Mortgage Statistics on Refinance Volume</h2>
+<p>This is a short post on gathering data from Freddie Mac based on their quarterly data published by Freddie Mac on volume of refinance transactions by refinance type.</p>
+<p>Additional information about the institution and this particular dataset can be found on the company’s site (here)<a href="" title="http://www.freddiemac.com/research/datasets/refinance-stats/">1</a>.</p>
+<blockquote>
+<p>The quarterly refinance statistics analysis uses a sample of properties where Freddie Mac has funded two successive conventional, first-mortgage loans, and the latest loan is for refinance rather than for purchase. The analysis does not track the use of funds made available from these refinances. The analysis also does not track loans paid off in entirety, with no new loan placed. Some loan products, such as 1-year adjustable-rate mortgages (ARMs) and balloons, are based on a small number of transactions.</p>
+</blockquote>
+<p>Once we have the url of the most recently published dataset, we can generate a function to download the file and load it into R for visualization.</p>
+</div>
+<div id="create-the-function-set-the-url-for-the-data" class="section level2">
+<h2>Create the Function &amp; Set the URL for the Data</h2>
+<p>You can also embed plots, for example:</p>
+<pre class="r"><code>fre_refi_url &lt;- &quot;http://www.freddiemac.com/research/docs/q3_refinance_2018.xls&quot;
+
+
+# Function:
+get_fre_qtr_refi &lt;- function(fre_refi_url){
+  
+  fre_col_nms &lt;- c(&quot;dt_qtr_yr&quot;, &quot;cash_out_pct&quot;, &quot;no_chng_pct&quot;, &quot;lower_loan_amt_pct&quot;, 
+                   &quot;median_ratio_new_old&quot;, &quot;median_age_refi&quot;, &quot;median_hpa_refi&quot;, 
+                   &quot;dt_qtr_yr2&quot;)
+  if(missing(fre_refi_url)){
+    base_fre_refi_url &lt;- &quot;http://www.freddiemac.com/research/datasets/refinance-stats/&quot;
+    paste0(&quot;Find the most recent dataset here: &quot;, base_fre_refi_url)
+  }else{
+    
+    tf &lt;- tempfile()
+    download.file(fre_refi_url, tf, mode = &quot;wb&quot;)
+    file.rename(tf, paste0(tf, &quot;.xls&quot;))
+    
+    d_fre &lt;- read_excel(paste0(tf, &quot;.xls&quot;), skip = 5, sheet = 1)%&gt;%
+      select(-contains(&quot;X_&quot;))%&gt;%
+      setNames(., fre_col_nms)%&gt;%
+      na.omit()
+    
+    st_dt_yr &lt;- str_sub(d_fre$dt_qtr_yr, 0, 4)%&gt;%head(.,1)%&gt;%as.numeric()
+    st_dt_qtr &lt;- str_sub(d_fre$dt_qtr_yr, -2)%&gt;%
+      head(.,1)%&gt;%
+      as.numeric()%&gt;%
+      ifelse(. == 1, ., (.*3)+1)
+    
+    end_dt_yr &lt;- str_sub(d_fre$dt_qtr_yr, 0, 4)%&gt;%tail(.,1)%&gt;%as.numeric()
+    end_dt_qtr &lt;- str_sub(d_fre$dt_qtr_yr, -2)%&gt;%
+      tail(.,1)%&gt;%
+      as.numeric()%&gt;%
+      ifelse(. == 1, ., (.*3)+1)
+    
+    seq_dt &lt;- seq(ymd(paste(st_dt_yr, st_dt_qtr, &quot;01&quot;, collapse = &quot;-&quot;)), 
+                  ymd(paste(end_dt_yr, end_dt_qtr, &quot;01&quot;, collapse = &quot;-&quot;)), 
+                  by = &quot;quarter&quot;)%&gt;%
+      tail(., -1)
+    
+    d_fre &lt;- d_fre%&gt;%
+      mutate(dt_full = seq_dt)
+  }
+  unlink(tf)
+  return(d_fre)
+}</code></pre>
+</div>
+<div id="get-data-loaded-and-make-transformations" class="section level2">
+<h2>Get Data Loaded and Make Transformations</h2>
+<p>Now that we have our function and url, lets: * Download the data with our function * The function also loads the data, removing unecessary columns * In addition, we setup our dates to be cleaner full dates (i.e. ymd) * Finally, we take some extra steps to setup a new “long” dataset for plotting + This requires us to gather the data + Create a refinance type factor variable that is ordered for plotting</p>
+<pre class="r"><code>d_refi &lt;- get_fre_qtr_refi(fre_refi_url)
+
+d_refi_long &lt;- d_refi%&gt;%
+  select(dt_full, contains(&quot;pct&quot;))%&gt;%
+  gather(refi_type, value, -dt_full)%&gt;%
+  mutate(refi_type_f = factor(refi_type, levels = rev(c(&quot;cash_out_pct&quot;,&quot;lower_loan_amt_pct&quot;, &quot;no_chng_pct&quot;)), 
+                              labels = rev(c(&quot;Cash-Out&quot;, &quot;Lower Loan Amount&quot;, &quot;No Change&quot;)), ordered = T))</code></pre>
+</div>
+<div id="plot-data" class="section level2">
+<h2>Plot Data</h2>
+<p>Next we will make a quick plot with ggplot2 to see how the proportion of refinance types has changed over time.</p>
+<pre class="r"><code>ggplot(data = d_refi_long)+
+  geom_area(aes(x = dt_full, y = value, fill = refi_type_f))+
+  scale_y_continuous(label = percent)+
+  scale_fill_manual(values = alpha(c(&quot;navyblue&quot;, &quot;darkorange1&quot;, &quot;seagreen&quot;), 0.85), NULL)+
+  labs(title = &quot;Quarterly Refinance by Type&quot;, 
+       subtitle = &quot;Freddie Mac Re-Fi&#39;s Only&quot;, 
+       x = NULL, 
+       y = &quot;Percent Type (%)&quot;, 
+       caption = &quot;Source: Freddie Mac&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;)</code></pre>
+<p><img src="/post/2018-11-23-freddie-mac-quarterly-re-fi_files/figure-html/plotData-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="notes-plot-save" class="section level2">
+<h2>Notes &amp; Plot Save</h2>
+<p>If we wanted to write the markdown file, html or save the plot we could do the following</p>
+<pre class="r"><code># ggsave(filename = &quot;Name-your-file.png&quot;, height = 7, width = 9, bg = &quot;transparent&quot;)</code></pre>
+</div>
