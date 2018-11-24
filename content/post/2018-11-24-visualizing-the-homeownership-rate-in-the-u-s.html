@@ -1,0 +1,216 @@
+---
+title: 'Visualizing the Homeownership Rate in the U.S. '
+author: Stuart I. Quinn
+date: '2018-11-24'
+slug: visualizing-the-homeownership-rate-in-the-u-s
+categories:
+  - R
+  - Housing
+tags:
+  - Housing
+  - R
+  - Purrr
+  - DataViz
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+
+
+<div id="summary-background-about-the-data" class="section level2">
+<h2>Summary Background (About the Data)</h2>
+<p>The homeownership rate within the U.S. is a metric closely followed by industry professionals and economists as an indicator of robustness of the housing sector. The U.S. Census Bureau produces a number of survey instruments in an attempt to better understand demographic, population, social and economic trends over long periods of time. The most well known survey is the decennial Census, but the Bureau produces a number of more frequent estimates and adjustments throughout the year since the currency of 10-year data is not always helpful in gathering a current snapshot.</p>
+<p>There are a number of different surveys used by economists to evaluate the number of households, tenure choice, occupancy and housing characteristics. Each of these surveys differ in method/design. Despite ongoing debates as to the <a href="https://www.calculatedriskblog.com/2018/09/lawler-household-estimates-conundrum.html">accuracy and discrepencies between these surveys</a>, more data to allow for these debates is better than none whatsoever. For this analysis we will be using one of the most commonly media cited measures, the Current Population Survey/Housing Vacancies and Homeownership (or the CPS/HVS).</p>
+<p><a href="https://www.census.gov/housing/hvs/index.html">Per the U.S. Census Bureau:</a></p>
+<blockquote>
+<p>The Housing Vacancies and Homeownership provides current information on the rental and homeowner vacancy rates, and characteristics of units available for occupancy. These data are used extensively by public and private sector organizations to evaluate the need for new housing programs and initiatives. In addition, the rental vacancy rate is a component of the index of leading economic indicators and is thereby used by the Federal Government and economic forecasters to gauge the current economic climate.</p>
+</blockquote>
+<p>For this analysis, we will use the most recently published data reported in Q3-2018.</p>
+<ul>
+<li><a href="https://www.census.gov/housing/hvs/data/histtabs.html">Census Historical HVS Data Site</a></li>
+<li><a href="https://raw.githubusercontent.com/stuartiquinn/datasets/master/CPS-HVS-Homeownership/hvs_homeownership_dl_helper.R">Table 19 - Quarterly Homeownership Rates by Age of Householder</a></li>
+<li>Note the above link is a direct download of the Excel file</li>
+</ul>
+<p>For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found (here)<a href="https://www.brodrigues.co/blog/2017-03-29-make-ggplot2-purrr/#">5</a>. <strong>Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.</strong></p>
+<pre class="r"><code># rm(list = ls()) Optional - don&#39;t treat strings as factors, no scientific
+# notation for large #&#39;s
+options(stringsAsFactors = F, scipen = 99)
+
+# Required Packages - install if necessary - UPDATE TO INSTALL IF DON&#39;T
+# EXISt
+pks &lt;- c(&quot;ggplot2&quot;, &quot;stringr&quot;, &quot;tidyverse&quot;, &quot;knitr&quot;, &quot;lubridate&quot;, &quot;fs&quot;, &quot;purrr&quot;, 
+    &quot;scales&quot;, &quot;tidyr&quot;, &quot;gridExtra&quot;, &quot;grid&quot;, &quot;kableExtra&quot;)
+
+invisible(lapply(pks, require, character.only = T))
+
+
+# Name of the file for reading in
+fname &lt;- &quot;2018-10-30-HVS-Homeownership-Q32018.csv&quot;</code></pre>
+</div>
+<div id="load-data-and-inspect-column-headers" class="section level2">
+<h2>Load Data and Inspect Column Headers</h2>
+<p>Upon loading the data, we can quickly inspect the most recent readings from Q3-2018. The column headers below are as follows:</p>
+<ul>
+<li>full_dt = The quarter reported expressed as a full date</li>
+<li>variable = The Age of Householder cohort</li>
+<li>value = The percent of homeownership for the cohort</li>
+<li>ma_ann_right = The 4 quarter (annual) moving average of the homeownership rate (right weighted) for each cohort</li>
+</ul>
+<pre class="r"><code># https://blogdown-demo.rbind.io/2018/02/27/r-file-paths/ For reading in
+# data with blogdown
+
+d &lt;- read_csv(paste0(&quot;../../static/data/&quot;, fname), col_names = T) %&gt;% select(full_dt, 
+    variable, value, ma_ann_right)
+
+# Get the most recent Homeownership Rate by Age of Householder We will use
+# this for adding points to our plots in the next section
+d_points &lt;- group_by(d, variable) %&gt;% slice(which.max(full_dt))
+
+d_points %&gt;% kable(., format = &quot;html&quot;) %&gt;% kable_styling(bootstrap_options = &quot;striped&quot;)</code></pre>
+<table class="table table-striped" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+full_dt
+</th>
+<th style="text-align:left;">
+variable
+</th>
+<th style="text-align:right;">
+value
+</th>
+<th style="text-align:right;">
+ma_ann_right
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+2018-07-01
+</td>
+<td style="text-align:left;">
+35_to_44_years
+</td>
+<td style="text-align:right;">
+59.5
+</td>
+<td style="text-align:right;">
+59.550
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2018-07-01
+</td>
+<td style="text-align:left;">
+45_to_54_years
+</td>
+<td style="text-align:right;">
+69.7
+</td>
+<td style="text-align:right;">
+69.950
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2018-07-01
+</td>
+<td style="text-align:left;">
+55_to_64_years
+</td>
+<td style="text-align:right;">
+75.6
+</td>
+<td style="text-align:right;">
+75.350
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2018-07-01
+</td>
+<td style="text-align:left;">
+65_years_and_over
+</td>
+<td style="text-align:right;">
+78.6
+</td>
+<td style="text-align:right;">
+78.575
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2018-07-01
+</td>
+<td style="text-align:left;">
+national
+</td>
+<td style="text-align:right;">
+64.4
+</td>
+<td style="text-align:right;">
+64.275
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2018-07-01
+</td>
+<td style="text-align:left;">
+under_35_years
+</td>
+<td style="text-align:right;">
+36.8
+</td>
+<td style="text-align:right;">
+36.150
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="plot-the-data" class="section level2">
+<h2>Plot the Data</h2>
+<p>In general, we would expect to see the highest levels of homeownership for the elderly age cohorts, which is reflected in the plots below. However, the primary cohort of interest for most market observers is the Under 35 age cohort for a couple of reasons</p>
+<ul>
+<li>They represent the most populous age cohort</li>
+<li>Most elder cohorts represent “step-up” home purchases, not a substantial contributor to increases in the rate (i.e. net new homeowners)</li>
+<li>Historically, the average age for consumers purchasing their first home is 27 (i.e. moving from renters to homeowners)</li>
+<li>Their behavior and desire for homeownership has been debated given the financial crisis, stagnant wages and high home prices (reduced affordability) in urban areas</li>
+</ul>
+<p>This should be viewed as a positive sign. Despite the expected downward trajectory resulting from the 2007 housing crisis, the rate has recently bottomed and is now moving upward nationally. By plotting can see this ascension at the national level has.</p>
+<div id="note-about-the-code" class="section level4">
+<h4>Note About the Code</h4>
+<p>There are a number of ways to make plots within R. The most flexible and seemingly widely used package is ggplot2. The plots we will create below use a combination of graphical packages, which include: ggplot2, grid and gridExtra. An alternative and more streamlined approach to the code below would be using ggplot::facet_wrap or ggplot:facet_grid. However, the method taken below allows for us more flexibility when saving the plots – providing the ability to save each Age Cohort graph in idually.</p>
+<p>The steps we take below, generate six in idual plots grouped by age cohort (variable) as nested lists in a single column of a data frame. For a more detailed explanation of how the purrr and tidyr make this possible, please refer to Bruno Rodrigues’ more detailed <a href="https://www.brodrigues.co/blog/2017-03-29-make-ggplot2-purrr/#">post on the topic</a>.</p>
+<p>In short, we are grouping and nesting all of the data by age cohort and then we are using purrr:map2 to pass the data (data = .x) and the age cohort (variable = .y) to appropriately title of each of the plots. The color used for each line is taken from the col_ref variable we defined within the first chunk of this post.</p>
+<p>One criticism of this graph, is that we are seemingly comparing a number of groupings whose graphs have different y-scaling which could be misleading.</p>
+<pre class="r"><code># Colors used for ggplot2 below, Optional - Adjust as desired
+col_ref &lt;- c(&quot;#26828EFF&quot;, &quot;#FDE725FF&quot;, &quot;#440154FF&quot;)
+
+# Creates the dataframe with a nested column containing each of the plots by
+# Age Cohort T
+
+p_all &lt;- d %&gt;% group_by(variable) %&gt;% nest() %&gt;% mutate(plots_by_cohort = map2(data, 
+    variable, ~ggplot(data = .x) + geom_line(aes(x = full_dt, y = value), size = 1.25, 
+        color = col_ref[3]) + geom_line(aes(x = full_dt, y = ma_ann_right), 
+        size = 1, color = col_ref[2]) + scale_x_date(labels = date_format(&quot;%Y-%m&quot;), 
+        breaks = date_breaks(&quot;36 months&quot;)) + theme_minimal() + theme(rect = element_rect(fill = &quot;transparent&quot;), 
+        title = element_text(size = 11)) + labs(title = paste0(&quot;Age Cohort: &quot;, 
+        str_replace_all(.y, pattern = &quot;_&quot;, &quot; &quot;)), subtitle = &quot;Note Axis Scale, 
+                                Yellow Indicates 4-Qtr Moving Average (Right)&quot;, 
+        x = NULL, y = NULL)))
+
+# This first makes the 6 in idual plots using the purrr:invoke function Then
+# we arrange each of these plots on a 2x3 with a title, caption and y-axis
+# label for the grid (rather than for each in idual plot)
+
+invoke(grid.arrange, p_all$plots_by_cohort, top = textGrob(&quot;Homeownership Rate by Age of Householder&quot;, 
+    hjust = 0, x = 0, gp = gpar(fontface = &quot;bold&quot;, fontsize = 14)), left = &quot;Homeownership %&quot;, 
+    bottom = textGrob(&quot;U.S. Census, CPS/HVS&quot;, hjust = 1, x = 0.9, gp = gpar(fontface = &quot;italic&quot;, 
+        fontsize = 8)))</code></pre>
+<p><img src="/post/2018-11-24-visualizing-the-homeownership-rate-in-the-u-s_files/figure-html/plotViz-1.png" width="864" style="display: block; margin: auto;" /></p>
+</div>
+</div>
