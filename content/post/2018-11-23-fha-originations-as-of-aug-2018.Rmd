@@ -7,119 +7,46 @@ categories: []
 tags: []
 ---
 
-The Federal Housing Administration is an agency within the U.S. Department of Housing and Urban Development, responsible for providing endorsements/insuring financing against residential and multi-family housing. Each month, the Agency publishes a (monthly "snapshot")[1] of their current portfolio of loans they have endorsed. These loans are ultimately securitized through another smaller HUD agency called Ginnie Mae, who bundles Government Guaranteed loans that are sold into the secondary market to private investors. 
+The Federal Housing Administration is an agency within HUD that provides a federal guarantee (endorsement), for loans originated in the primary marketplace. Each month, the agency publishes a [monthly snapshot][1], for purposes of demonstrating the lenders, mortgage type, geography and financing terms for mortgages it ensures. 
 
-```{r echo = T, message = F, warning = F, eval = T}
+For purposes of this exercise, all of the data has already been downloaded locally, transformed and saved for purposes of loading directly into R for visualization. A detailed file of that process can be found [here][2]. 
 
-#ADMIN
-#-----------------------------------------------------------------------------
-# rm(list = ls())
-# Set options: StringsAsFactors and Non-Scientific Notation
+```{r echo = T, eval = T, warning = F, message = F}
+
 options(stringsAsFactors = F, scipen = 99)
 
 # List packages used
 pks <- c("rvest", "ggplot2", "purrr", "tidyverse", "tidycensus",
-         "stringr", "lubridate", "fs", "xlsx", "readxl", "scales")
+         "stringr", "lubridate", "fs", "knitr", "xlsx", "readxl", "scales")
 
 # Load packages used
 invisible(lapply(pks, require, character.only = T))
 
-```
+##################################################
+# NOTE                                          #
+# This will need to be updated by the user      #
+# depending on where the data they dl is stored #
+##################################################
 
-## Origination Statistics for FHA Endorsed Loans
+main_dir <- paste0(path_home_r(), "/R/2018/FHA-Orig/")
+data_dir <- paste0(main_dir, "data/")
 
-Similar to other posts, we will perform our ETL process through R by: (1) Downloading the data from the site; (2) load the data into R; (3) create subsets and engineer new fields for purposes of gaining further insight into the the volume of loans originated, which are ultimately endorsed by the Government agency. 
-
-```{r linksFunctions, echo = T, eval = T, warning = F, message = F}
-
-# #The code below allows for a user to (i) set a wd; (ii) create a 'data' subdirectory
-# # (iii) Create an env var to check if the file has already been downloaded
-
-setwd(paste0(path_home_r(), "/R/2018/FHA-Orig/"))
-
-# # Check to see if data folder exists in working directory, if no, create
-if(is_dir(paste0(getwd(), "/data/"))==F){
-  dir_create(paste0(getwd(), "/data/"))
-  print("Directory 'data' created in working directory")
-}else{
-  f_cnt <- length(dir_ls(paste0(getwd(), "/data/")))
-  print(paste0("Directory already exists and contains", f_cnt, "files"))
-}
-
-# # Get data direcotry
-data_dir <- paste0(getwd(), "/data/")
-#
-# # Check to see if files already exist
-fn_exists_already <- dir_ls(data_dir)
-
-# Function to read in all FHA data that is downloaded, where sheet 3 = Purchase Loans
-# Sheet 4 = Refinance transactions
-
-read_in_fha_orig <- function(vec_file_nms){
-  d_purchase <- map_df(vec_file_nms, 
-                       ~read_excel(path = ., sheet = 3, col_names = F, skip = 1))
-  d_refi <- map_df(vec_file_nms, 
-                   ~read_excel(path = ., sheet = 4, col_names = F, skip = 1))
-  d_full <- bind_rows(d_purchase, d_refi)
-  return(d_full)
-}
-
-dir_ls(paste0()
 
 ```
 
-## Get the Data URLs, Download and Read-in Data
+## Read-in Data that Has Already Been Downloaded
 
-Since the files are in an excel format, we will download all 2018 files contained on the site, download them and load them. 
+We will use the function created above to download the single .csv file stored locally containing all of the data produced by FHA from January 18 - August 18. 
 
-```{r getData, echo = T, eval = T, message = F, warning = F, cache = T}
-# Site address hosting files
-hud_link_url <- "https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap"
-# Base url where files are actually stored
-hud_base_url <- "https://www.hud.gov"
+```{r loadData, echo = T, eval = T, warning = F, message = F}
 
-# Using rvest, scrape table for links and link names
-# Filter only .xls files (some are zip)
-
-hud_links <- read_html(hud_link_url)%>%
-  html_nodes('a')%>%
-  html_attr('href')%>%
-  data.frame(url = ., stringsAsFactors = F)%>%
-  filter(grepl('.xls', url))%>%
-  mutate(fname = basename(url),
-         full_dl_link = paste0(hud_base_url, url),
-         dl_dir = data_dir)
-
-# Filter out those for 2018 (many more years of archived data as needed)
-dl_links <- filter(hud_links, grepl(url, pattern = "2018", ignore.case = T))
-
-# Check to see if the file has been downloaded already based on wd/data
-# If yes, filter out from dl list so you only receive net new files
-if(length(fn_exists_already) > 0){
-  dl_links <- filter(dl_links, fname %in% fn_exists_already)
-}else{
-  dl_links <- dl_links
-}
 
 fha_ref_url <- "https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/ref_file/1_ref_var_definitions.csv"
 d_ref_col_nms <- read_csv(fha_ref_url)
 
-# This iterates through each link and downloads the workbook 
-if(nrow(dl_links) == 0){
-  print("You already have all of the files available")
-}else{
-  map2(dl_links$full_dl_link, dl_links$fname,
-     ~download.file(url = .x, destfile = paste0(data_dir, .y), mode = "wb"))
-}
-# This takes all of the files in our working directory for purposes of reading
-# in each excel sheet and names it by file name
-fnames <- dir_ls(data_dir)
+fname <- dir_ls(main_dir, regexp = "FHA-Orig-2018")
 
-# Calls our function above that reads in each file: purchase sheet, then refi sheet
-# then binds the files together for all originations
-
-#****NOTE*** Takesa while as it is reading in a lot of data
-d_full <- read_in_fha_orig(fnames)
+d_full <- read.csv(fname, header = T)
 
 # Set colnames with the reference file
 colnames(d_full) <- d_ref_col_nms$var_name
@@ -128,7 +55,28 @@ d_full <- d_full%>%
   arrange(dt_yr_endorse, dt_mo_endorse)
 
 
+
 ```
 
 
+```{r plotViz, echo = T, eval = T,  message = F, warning = F, fig.align = "center"}
+
+ggplot(d_full, aes(x = dt_mo_endorse, fill = loan_purpose, group = loan_purpose))+
+  geom_bar(stat = "count")+
+  scale_fill_manual(values = c("darkred", "navy", "dodgerblue2"), "Loan Purpose")+
+  scale_y_continuous(label = comma)+
+  scale_x_continuous(breaks = c(seq(min(d_full$dt_mo_endorse), max(d_full$dt_mo_endorse), 1)),
+                 label = function(x) paste0("MO-", x))+
+  labs(title = "FHA Portfolio Snapshot",
+       subtitle = paste0("Data through: ", month.abb[max(d_full$dt_mo_endorse)],
+                         "-", max(d_full$dt_yr_endorse)),
+       caption = "HUD/FHA",
+       x = NULL,
+       y = "Count Originated")+
+  theme_minimal()+
+  theme(legend.position = "top")
+
+```
+
 [1]: "https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap"
+[2]: "https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/1.1_fha_dl_write_monthly_snapshot.R"

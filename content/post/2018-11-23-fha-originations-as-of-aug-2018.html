@@ -9,52 +9,53 @@ tags: []
 
 
 
-<p>The Federal Housing Administration is an agency within the U.S. Department of Housing and Urban Development, responsible for providing endorsements/insuring financing against residential and multi-family housing. Each month, the Agency publishes a “snapshot” of their current portfolio of loans they have endorsed. These loans are ultimately securitized through another smaller HUD agency called Ginnie Mae, who bundles Government Guaranteed loans that are sold into the secondary market to private investors.</p>
-<pre class="r"><code>#ADMIN
-#-----------------------------------------------------------------------------
-# rm(list = ls())
-# Set options: StringsAsFactors and Non-Scientific Notation
-options(stringsAsFactors = F, scipen = 99)
+<p>The Federal Housing Administration is an agency within HUD that provides a federal guarantee (endorsement), for loans originated in the primary marketplace. Each month, the agency publishes a <a href="" title="https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap">monthly snapshot</a>, for purposes of demonstrating the lenders, mortgage type, geography and financing terms for mortgages it ensures.</p>
+<p>For purposes of this exercise, all of the data has already been downloaded locally, transformed and saved for purposes of loading directly into R for visualization. A detailed file of that process can be found <a href="" title="https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/1.1_fha_dl_write_monthly_snapshot.R">here</a>.</p>
+<pre class="r"><code>options(stringsAsFactors = F, scipen = 99)
 
 # List packages used
 pks &lt;- c(&quot;rvest&quot;, &quot;ggplot2&quot;, &quot;purrr&quot;, &quot;tidyverse&quot;, &quot;tidycensus&quot;,
-         &quot;stringr&quot;, &quot;lubridate&quot;, &quot;fs&quot;, &quot;xlsx&quot;, &quot;readxl&quot;, &quot;scales&quot;)
+         &quot;stringr&quot;, &quot;lubridate&quot;, &quot;fs&quot;, &quot;knitr&quot;, &quot;xlsx&quot;, &quot;readxl&quot;, &quot;scales&quot;)
 
 # Load packages used
-invisible(lapply(pks, require, character.only = T))</code></pre>
-<div id="origination-statistics-for-fha-endorsed-loans" class="section level2">
-<h2>Origination Statistics for FHA Endorsed Loans</h2>
-<p>Similar to other posts, we will perform our ETL process through R by: (1) Downloading the data from the site; (2) load the data into R; (3) create subsets and engineer new fields for purposes of gaining further insight into the the volume of loans originated, which are ultimately endorsed by the Government agency.</p>
-<pre class="r"><code># #The code below allows for a user to (i) set a wd; (ii) create a &#39;data&#39; subdirectory
-# # (iii) Create an env var to check if the file has already been downloaded
+invisible(lapply(pks, require, character.only = T))
 
-# setwd(paste0(path_home_r(), &quot;/R/2018/FHA-Orig/&quot;))
-# 
-# # Check to see if data folder exists in working directory, if no, create
-# if(is_dir(paste0(getwd(), &quot;/data/&quot;))==F){
-#   dir_create(paste0(getwd(), &quot;/data/&quot;))
-#   print(&quot;Directory &#39;data&#39; created in working directory&quot;)
-# }else{
-#   f_cnt &lt;- length(dir_ls(paste0(getwd(), &quot;/data/&quot;)))
-#   print(paste0(&quot;Directory already exists and contains&quot;, f_cnt, &quot;files&quot;))
-# }
-# 
-# # Get data direcotry
-# data_dir &lt;- paste0(getwd(), &quot;/data/&quot;)
-# 
-# # Check to see if files already exist
-# fn_exists_already &lt;- dir_ls(data_dir)
+##################################################
+# NOTE                                          #
+# This will need to be updated by the user      #
+# depending on where the data they dl is stored #
+##################################################
 
-# Function to read in all FHA data that is downloaded, where sheet 3 = Purchase Loans
-# Sheet 4 = Refinance transactions
+main_dir &lt;- paste0(path_home_r(), &quot;/R/2018/FHA-Orig/&quot;)
+data_dir &lt;- paste0(main_dir, &quot;data/&quot;)</code></pre>
+<div id="read-in-data-that-has-already-been-downloaded" class="section level2">
+<h2>Read-in Data that Has Already Been Downloaded</h2>
+<p>We will use the function created above to download the single .csv file stored locally containing all of the data produced by FHA from January 18 - August 18.</p>
+<pre class="r"><code>fha_ref_url &lt;- &quot;https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/ref_file/1_ref_var_definitions.csv&quot;
+d_ref_col_nms &lt;- read_csv(fha_ref_url)
 
-read_in_fha_orig &lt;- function(vec_file_nms){
-  d_purchase &lt;- map_df(vec_file_nms, ~read_excel(path = ., sheet = 3, col_names = F, skip = 1))
-  d_refi &lt;- map_df(vec_file_nms, ~read_excel(path = ., sheet = 4, col_names = F, skip = 1))
-  d_full &lt;- bind_rows(d_purchase, d_refi)
-  return(d_full)
-}</code></pre>
-</div>
-<div id="get-the-data-urls-download-and-read-in-data" class="section level2">
-<h2>Get the Data URLs, Download and Read-in Data</h2>
+fname &lt;- dir_ls(main_dir, regexp = &quot;FHA-Orig-2018&quot;)
+
+d_full &lt;- read.csv(fname, header = T)
+
+# Set colnames with the reference file
+colnames(d_full) &lt;- d_ref_col_nms$var_name
+
+d_full &lt;- d_full%&gt;%
+  arrange(dt_yr_endorse, dt_mo_endorse)</code></pre>
+<pre class="r"><code>ggplot(d_full, aes(x = dt_mo_endorse, fill = loan_purpose, group = loan_purpose))+
+  geom_bar(stat = &quot;count&quot;)+
+  scale_fill_manual(values = c(&quot;darkred&quot;, &quot;navy&quot;, &quot;dodgerblue2&quot;), &quot;Loan Purpose&quot;)+
+  scale_y_continuous(label = comma)+
+  scale_x_continuous(breaks = c(seq(min(d_full$dt_mo_endorse), max(d_full$dt_mo_endorse), 1)),
+                 label = function(x) paste0(&quot;MO-&quot;, x))+
+  labs(title = &quot;FHA Portfolio Snapshot&quot;,
+       subtitle = paste0(&quot;Data through: &quot;, month.abb[max(d_full$dt_mo_endorse)],
+                         &quot;-&quot;, max(d_full$dt_yr_endorse)),
+       caption = &quot;HUD/FHA&quot;,
+       x = NULL,
+       y = &quot;Count Originated&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;)</code></pre>
+<p><img src="/post/2018-11-23-fha-originations-as-of-aug-2018_files/figure-html/plotViz-1.png" width="672" style="display: block; margin: auto;" /></p>
 </div>
