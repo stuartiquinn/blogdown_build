@@ -7,9 +7,9 @@ categories: []
 tags: []
 ---
 
-One of the may indicators for increasing stock valuations beyond their norm is the so-called "Buffett Indicator." The measure and namesake is dereved from none-other than the Omaha Oracle, Warren Buffett. Mr. Buffett has a long history of value investing through his firm Berkshire Hathaway.
+One of the may indicators for increasing stock valuations beyond their norm is the so-called "Buffett Indicator." The measure and namesake is derived from none-other than the Omaha Oracle, Warren Buffett. Mr. Buffett has a long history of value investing through his firm Berkshire Hathaway.
 
-In order to evaluate discounts or deals within the market, a generalized measure was created to eveluate how 'expensive' the current marketplace is relative to the total aggregate production measure by U.S. Gross Domestic Product. 
+In order to evaluate discounts or deals within the market, a generalized measure was created to evaluate how 'expensive' the current marketplace is relative to the total aggregate production measure by U.S. Gross Domestic Product (GDP). 
 
 ```{r admin, eval = T, message = F, warning = F, echo = T}
 
