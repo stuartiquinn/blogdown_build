@@ -31,14 +31,16 @@ tags:
 <li>Note the above link is a direct download of the Excel file</li>
 </ul>
 <p>For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found (here)<a href="https://www.brodrigues.co/blog/2017-03-29-make-ggplot2-purrr/#">5</a>. <strong>Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.</strong></p>
-<pre class="r"><code># rm(list = ls()) Optional - don&#39;t treat strings as factors, no scientific
-# notation for large #&#39;s
+<pre class="r"><code># rm(list = ls())
+# Optional - don&#39;t treat strings as factors, 
+# no scientific notation for large #&#39;s
 options(stringsAsFactors = F, scipen = 99)
 
-# Required Packages - install if necessary - UPDATE TO INSTALL IF DON&#39;T
-# EXISt
-pks &lt;- c(&quot;ggplot2&quot;, &quot;stringr&quot;, &quot;tidyverse&quot;, &quot;knitr&quot;, &quot;lubridate&quot;, &quot;fs&quot;, &quot;purrr&quot;, 
-    &quot;scales&quot;, &quot;tidyr&quot;, &quot;gridExtra&quot;, &quot;grid&quot;, &quot;kableExtra&quot;)
+# Required Packages - install if necessary
+# UPDATE TO INSTALL IF DON&#39;T EXISt
+pks &lt;- c(&quot;ggplot2&quot;, &quot;stringr&quot;, &quot;tidyverse&quot;, &quot;knitr&quot;,
+         &quot;lubridate&quot;, &quot;fs&quot;, &quot;purrr&quot;, &quot;scales&quot;, &quot;tidyr&quot;,
+         &quot;gridExtra&quot;, &quot;grid&quot;, &quot;kableExtra&quot;)
 
 invisible(lapply(pks, require, character.only = T))
 
@@ -55,116 +57,122 @@ fname &lt;- &quot;2018-10-30-HVS-Homeownership-Q32018.csv&quot;</code></pre>
 <li>value = The percent of homeownership for the cohort</li>
 <li>ma_ann_right = The 4 quarter (annual) moving average of the homeownership rate (right weighted) for each cohort</li>
 </ul>
-<pre class="r"><code># https://blogdown-demo.rbind.io/2018/02/27/r-file-paths/ For reading in
-# data with blogdown
+<pre class="r"><code># https://blogdown-demo.rbind.io/2018/02/27/r-file-paths/
+# For reading in data with blogdown
 
-d &lt;- read_csv(paste0(&quot;../../static/data/&quot;, fname), col_names = T) %&gt;% select(full_dt, 
-    variable, value, ma_ann_right)
+d &lt;- read_csv(paste0(&quot;../../static/data/&quot;,fname), col_names = T)%&gt;%
+  select(full_dt, variable, value, ma_ann_right)
 
-# Get the most recent Homeownership Rate by Age of Householder We will use
-# this for adding points to our plots in the next section
-d_points &lt;- group_by(d, variable) %&gt;% slice(which.max(full_dt))
+# Get the most recent Homeownership Rate 
+# by Age of Householder
+# We will use this for adding points 
+# to our plots in the next section
+d_points &lt;- group_by(d, variable)%&gt;%
+  slice(which.max(full_dt))
 
-d_points %&gt;% kable(., format = &quot;html&quot;) %&gt;% kable_styling(bootstrap_options = &quot;striped&quot;)</code></pre>
+d_points%&gt;%
+  kable(., format = &quot;html&quot;, align = &quot;c&quot;)%&gt;%
+  kable_styling(bootstrap_options = &quot;striped&quot;, 
+                full_width = T, position = &quot;center&quot;)</code></pre>
 <table class="table table-striped" style="margin-left: auto; margin-right: auto;">
 <thead>
 <tr>
-<th style="text-align:left;">
+<th style="text-align:center;">
 full_dt
 </th>
-<th style="text-align:left;">
+<th style="text-align:center;">
 variable
 </th>
-<th style="text-align:right;">
+<th style="text-align:center;">
 value
 </th>
-<th style="text-align:right;">
+<th style="text-align:center;">
 ma_ann_right
 </th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td style="text-align:left;">
+<td style="text-align:center;">
 2018-07-01
 </td>
-<td style="text-align:left;">
+<td style="text-align:center;">
 35_to_44_years
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 59.5
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 59.550
 </td>
 </tr>
 <tr>
-<td style="text-align:left;">
+<td style="text-align:center;">
 2018-07-01
 </td>
-<td style="text-align:left;">
+<td style="text-align:center;">
 45_to_54_years
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 69.7
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 69.950
 </td>
 </tr>
 <tr>
-<td style="text-align:left;">
+<td style="text-align:center;">
 2018-07-01
 </td>
-<td style="text-align:left;">
+<td style="text-align:center;">
 55_to_64_years
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 75.6
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 75.350
 </td>
 </tr>
 <tr>
-<td style="text-align:left;">
+<td style="text-align:center;">
 2018-07-01
 </td>
-<td style="text-align:left;">
+<td style="text-align:center;">
 65_years_and_over
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 78.6
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 78.575
 </td>
 </tr>
 <tr>
-<td style="text-align:left;">
+<td style="text-align:center;">
 2018-07-01
 </td>
-<td style="text-align:left;">
+<td style="text-align:center;">
 national
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 64.4
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 64.275
 </td>
 </tr>
 <tr>
-<td style="text-align:left;">
+<td style="text-align:center;">
 2018-07-01
 </td>
-<td style="text-align:left;">
+<td style="text-align:center;">
 under_35_years
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 36.8
 </td>
-<td style="text-align:right;">
+<td style="text-align:center;">
 36.150
 </td>
 </tr>
@@ -191,26 +199,27 @@ under_35_years
 col_ref &lt;- c(&quot;#26828EFF&quot;, &quot;#FDE725FF&quot;, &quot;#440154FF&quot;)
 
 # Creates the dataframe with a nested column containing each of the plots by
-# Age Cohort T
+# Age Cohort
 
 p_all &lt;- d %&gt;% group_by(variable) %&gt;% nest() %&gt;% mutate(plots_by_cohort = map2(data, 
     variable, ~ggplot(data = .x) + geom_line(aes(x = full_dt, y = value), size = 1.25, 
         color = col_ref[3]) + geom_line(aes(x = full_dt, y = ma_ann_right), 
         size = 1, color = col_ref[2]) + scale_x_date(labels = date_format(&quot;%Y-%m&quot;), 
         breaks = date_breaks(&quot;36 months&quot;)) + theme_minimal() + theme(rect = element_rect(fill = &quot;transparent&quot;), 
-        title = element_text(size = 11)) + labs(title = paste0(&quot;Age Cohort: &quot;, 
-        str_replace_all(.y, pattern = &quot;_&quot;, &quot; &quot;)), subtitle = &quot;Note Axis Scale, 
+        title = element_text(size = 11), axis.text.x = element_text(angle = 45)) + 
+        labs(title = paste0(&quot;Age Cohort: &quot;, str_replace_all(.y, pattern = &quot;_&quot;, 
+            &quot; &quot;)), subtitle = &quot;Note Axis Scale, 
                                 Yellow Indicates 4-Qtr Moving Average (Right)&quot;, 
-        x = NULL, y = NULL)))
+            x = NULL, y = NULL)))
 
 # This first makes the 6 in idual plots using the purrr:invoke function Then
 # we arrange each of these plots on a 2x3 with a title, caption and y-axis
-# label for the grid (rather than for each in idual plot)
+# label for the grid (rather than for each in idividual plot)
 
 invoke(grid.arrange, p_all$plots_by_cohort, top = textGrob(&quot;Homeownership Rate by Age of Householder&quot;, 
     hjust = 0, x = 0, gp = gpar(fontface = &quot;bold&quot;, fontsize = 14)), left = &quot;Homeownership %&quot;, 
     bottom = textGrob(&quot;U.S. Census, CPS/HVS&quot;, hjust = 1, x = 0.9, gp = gpar(fontface = &quot;italic&quot;, 
         fontsize = 8)))</code></pre>
-<p><img src="/post/2018-11-24-visualizing-the-homeownership-rate-in-the-u-s_files/figure-html/plotViz-1.png" width="864" style="display: block; margin: auto;" /></p>
+<p><img src="/post/2018-11-24-visualizing-the-homeownership-rate-in-the-u-s_files/figure-html/plotViz-1.png" width="1056" style="display: block; margin: auto;" /></p>
 </div>
 </div>

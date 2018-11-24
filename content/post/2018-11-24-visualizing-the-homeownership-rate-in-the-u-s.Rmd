@@ -32,12 +32,14 @@ For this analysis, we will use the most recently published data reported in Q3-2
 For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found (here)[5].
 **Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.**
 
-```{r adminSetup, echo = T, eval = T, message = F, warning = F, tidy = T, highlight = T}
+```{r adminSetup, echo = T, eval = T, message = F, warning = F, highlight = T}
 # rm(list = ls())
-# Optional - don't treat strings as factors, no scientific notation for large #'s
+# Optional - don't treat strings as factors, 
+# no scientific notation for large #'s
 options(stringsAsFactors = F, scipen = 99)
 
-# Required Packages - install if necessary - UPDATE TO INSTALL IF DON'T EXISt
+# Required Packages - install if necessary
+# UPDATE TO INSTALL IF DON'T EXISt
 pks <- c("ggplot2", "stringr", "tidyverse", "knitr",
          "lubridate", "fs", "purrr", "scales", "tidyr",
          "gridExtra", "grid", "kableExtra")
@@ -60,7 +62,7 @@ Upon loading the data, we can quickly inspect the most recent readings from Q3-2
 * ma_ann_right = The 4 quarter (annual) moving average of the homeownership rate (right weighted) for each cohort
 
 
-```{r loadData, echo = T, eval = T, message = F, warning=F, include = T, tidy = T, highlight=T, fig.align = "center"}
+```{r loadData, echo = T, eval = T, message = F, warning=F, include = T, highlight=T, fig.align = "center"}
 
 # https://blogdown-demo.rbind.io/2018/02/27/r-file-paths/
 # For reading in data with blogdown
@@ -68,14 +70,17 @@ Upon loading the data, we can quickly inspect the most recent readings from Q3-2
 d <- read_csv(paste0("../../static/data/",fname), col_names = T)%>%
   select(full_dt, variable, value, ma_ann_right)
 
-# Get the most recent Homeownership Rate by Age of Householder
-# We will use this for adding points to our plots in the next section
+# Get the most recent Homeownership Rate 
+# by Age of Householder
+# We will use this for adding points 
+# to our plots in the next section
 d_points <- group_by(d, variable)%>%
   slice(which.max(full_dt))
 
 d_points%>%
-  kable(., format = "html")%>%
-  kable_styling(bootstrap_options = "striped")
+  kable(., format = "html", align = "c")%>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = T, position = "center")
 
 ```
 
@@ -102,13 +107,13 @@ In short, we are grouping and nesting all of the data by age cohort and then we 
 One criticism of this graph, is that we are seemingly comparing a number of groupings whose graphs have different y-scaling which could be misleading. 
 
 
-```{r plotViz, echo = T, eval = T, warning = F, message = F, fig.align = "center", fig.height= 7, fig.width= 9, tidy = T, highlight = T}
+```{r plotViz, echo = T, eval = T, warning = F, message = F, fig.align = "center", fig.height= 7, fig.width= 11, tidy = T, highlight = T}
 
 # Colors used for ggplot2 below, Optional - Adjust as desired
 col_ref <- c("#26828EFF", "#FDE725FF", "#440154FF")
 
-# Creates the dataframe with a nested column containing each of the plots by Age Cohort
-# T
+# Creates the dataframe with a nested 
+# column containing each of the plots by Age Cohort
 
 p_all <- d%>%
   group_by(variable)%>%
@@ -122,17 +127,21 @@ p_all <- d%>%
                                         breaks = date_breaks("36 months"))+
                            theme_minimal()+
                              theme(rect = element_rect(fill = "transparent"), 
-                                   title = element_text(size = 11))+
+                                   title = element_text(size = 11), 
+                                   axis.text.x = element_text(angle = 45))+
                            labs(title = paste0("Age Cohort: ",
-                                               str_replace_all(.y, pattern="_", " ")),
+                                               str_replace_all(.y, 
+                                                               pattern="_", " ")),
                                 subtitle = "Note Axis Scale, 
                                 Yellow Indicates 4-Qtr Moving Average (Right)", 
                                 x = NULL,
                                 y = NULL)))
 
-# This first makes the 6 in idual plots using the purrr:invoke function
-# Then we arrange each of these plots on a 2x3 with a title, caption and y-axis
-# label for the grid (rather than for each in idual plot)
+# This first makes the 6 in idual plots 
+# using the purrr:invoke function
+# Then we arrange each of these plots on a 2x3 
+# with a title, caption and y-axis
+# label for the grid (rather than for each in idividual plot)
 
 invoke(grid.arrange, p_all$plots_by_cohort,
        top = textGrob("Homeownership Rate by Age of Householder", hjust = 0, x = 0, 
