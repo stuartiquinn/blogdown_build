@@ -78,5 +78,5 @@ ggplot(d_full, aes(x = dt_mo_endorse, fill = loan_purpose, group = loan_purpose)
 
 ```
 
-[1]: "https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap"
-[2]: "https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/1.1_fha_dl_write_monthly_snapshot.R"
+[1]: https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap
+[2]: https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/1.1_fha_dl_write_monthly_snapshot.R
