@@ -1,0 +1,110 @@
+---
+title: Buffett Indicator - Stock Valuations
+author: Stuart I. Quinn
+date: '2018-11-23'
+slug: buffett-indicator-stock-valuations
+categories: []
+tags: []
+---
+
+
+
+<p>One of the may indicators for increasing stock valuations beyond their norm is the so-called “Buffett Indicator.” The measure and namesake is dereved from none-other than the Omaha Oracle, Warren Buffett. Mr. Buffett has a long history of value investing through his firm Berkshire Hathaway.</p>
+<p>In order to evaluate discounts or deals within the market, a generalized measure was created to eveluate how ‘expensive’ the current marketplace is relative to the total aggregate production measure by U.S. Gross Domestic Product.</p>
+<pre class="r"><code>options(stringsAsFactors = F)
+setwd(paste0(Sys.getenv(&quot;HOME&quot;), &quot;/R/2018/Buffet-Indicator&quot;))
+
+pks &lt;- c(&quot;reshape2&quot;, &quot;tidyverse&quot;, &quot;tidyquant&quot;, 
+         &quot;lubridate&quot;, &quot;ggplot2&quot;, &quot;scales&quot;, &quot;viridis&quot;)
+invisible(lapply(pks, require, character.only = T))
+
+tickers &lt;- c(&quot;WILL5000PRFC&quot;, &quot;GDP&quot;, &quot;NCBEILQ027S&quot;)
+
+d_recessions &lt;- read.table(textConnection(
+  &quot;Peak, Trough
+  1857-06-01, 1858-12-01
+  1860-10-01, 1861-06-01
+  1865-04-01, 1867-12-01
+  1869-06-01, 1870-12-01
+  1873-10-01, 1879-03-01
+  1882-03-01, 1885-05-01
+  1887-03-01, 1888-04-01
+  1890-07-01, 1891-05-01
+  1893-01-01, 1894-06-01
+  1895-12-01, 1897-06-01
+  1899-06-01, 1900-12-01
+  1902-09-01, 1904-08-01
+  1907-05-01, 1908-06-01
+  1910-01-01, 1912-01-01
+  1913-01-01, 1914-12-01
+  1918-08-01, 1919-03-01
+  1920-01-01, 1921-07-01
+  1923-05-01, 1924-07-01
+  1926-10-01, 1927-11-01
+  1929-08-01, 1933-03-01
+  1937-05-01, 1938-06-01
+  1945-02-01, 1945-10-01
+  1948-11-01, 1949-10-01
+  1953-07-01, 1954-05-01
+  1957-08-01, 1958-04-01
+  1960-04-01, 1961-02-01
+  1969-12-01, 1970-11-01
+  1973-11-01, 1975-03-01
+  1980-01-01, 1980-07-01
+  1981-07-01, 1982-11-01
+  1990-07-01, 1991-03-01
+  2001-03-01, 2001-11-01
+  2007-12-01, 2009-06-01&quot;), sep=&#39;,&#39;,
+  colClasses=c(&#39;Date&#39;, &#39;Date&#39;), header=TRUE)</code></pre>
+<pre class="r"><code>d_stock &lt;- tq_get(x = tickers[1], get = &quot;economic.data&quot;, from=&quot;1971-01-01&quot;)%&gt;%
+  na.omit()%&gt;%
+  mutate(report_freq = ifelse(date &lt; 1979-12-01, &quot;monthly&quot;, &quot;daily&quot;), 
+         qtr_dt = as.yearqtr(date, &quot;%Y-%m-%d&quot;))%&gt;%
+  group_by(qtr_dt)%&gt;%
+  summarise(qtr_value_willshire = mean(price))%&gt;%
+  ungroup()
+
+
+d_gdp &lt;- tq_get(x = tickers[2], get = &quot;economic.data&quot;, from=&quot;1971-01-01&quot;)%&gt;%
+  mutate(qtr_dt = as.yearqtr(date, &quot;%Y-%m-%d&quot;))%&gt;%
+  group_by(qtr_dt)%&gt;%
+  summarise(qtr_value_gdp = mean(price))%&gt;%
+  ungroup()
+
+d_fed_assets &lt;- tq_get(x = tickers[3], get=&quot;economic.data&quot;, from=&quot;1971-01-01&quot;)%&gt;%
+  mutate(qtr_dt = as.yearqtr(date, &quot;%Y-%m-%d&quot;))%&gt;%
+  group_by(qtr_dt)%&gt;%
+  summarise(qtr_value_z1 = mean(price)/10^3)%&gt;%
+  ungroup()
+
+
+d_full &lt;- d_gdp%&gt;%
+  inner_join(., d_stock, by=c(&quot;qtr_dt&quot;=&quot;qtr_dt&quot;))%&gt;%
+  inner_join(., d_fed_assets, by = c(&quot;qtr_dt&quot;=&quot;qtr_dt&quot;))%&gt;%
+  mutate(willshire_val_ratio = qtr_value_willshire/qtr_value_gdp, 
+         z1_val_ratio = qtr_value_z1/qtr_value_gdp)
+p1_recession &lt;- subset(d_recessions, Peak &gt;= min(d_full$qtr_dt))</code></pre>
+<pre class="r"><code>d_p1 &lt;- d_full%&gt;%
+  select(qtr_dt, contains(&quot;ratio&quot;))%&gt;%
+  melt(., id.vars = &quot;qtr_dt&quot;)
+
+
+p1 &lt;- ggplot(d_p1)+
+  geom_line(aes(x = qtr_dt, y = value, color = variable), size = 1.25)+
+  scale_x_yearqtr()+
+  scale_y_continuous(labels=percent)+
+  scale_color_viridis_d(labels = c(&quot;Wilshire/GDP&quot;, &quot;Non-Financial Corp Liabilities/GDP&quot;))+
+  geom_line(aes(x = qtr_dt, y = mean(value)), linetype = 2, color = &quot;red&quot;)+
+  geom_smooth(aes(x = qtr_dt, y = value), method = &quot;auto&quot;, formula = y~x)+
+  geom_rect(data = p1_recession, aes(xmin = as.yearqtr(Peak), 
+                                     xmax = as.yearqtr(Trough), ymin = -Inf, ymax = +Inf),
+            fill = &#39;dodgerblue1&#39;, alpha = 0.3)+
+  labs(title = &quot;Buffet Indicator Ratio&quot;, 
+       x = NULL, 
+       y = &quot;Ratio of the: Willshire 5000 / GDP&quot;, 
+       caption = &quot;NBER, Federal Reserve, St. Louis, Tables: WILL5000PRFC, GDP, NCBEILQ027S&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;, 
+        legend.title = element_blank())
+p1</code></pre>
+<p><img src="/post/2018-11-23-buffett-indicator-stock-valuations_files/figure-html/plotViz-1.png" width="672" style="display: block; margin: auto;" /></p>
