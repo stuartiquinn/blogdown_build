@@ -1,0 +1,61 @@
+---
+title: FHA - Originations As of Aug-18
+author: 'Stuart I. Quinn'
+date: '2018-11-23'
+slug: fha-originations-as-of-aug-18
+categories: []
+tags: []
+---
+
+
+
+<p>The Federal Housing Administration is an agency within HUD that provides a federal guarantee (endorsement), for loans originated in the primary marketplace. Each month, the agency publishes a (monthly snapshot)[1], for purposes of demonstrating the lenders, mortgage type, geography and financing terms for mortgages it ensures.</p>
+<p>For purposes of this exercise, all of the data has already been downloaded locally, transformed and saved for purposes of loading directly into R for visualization. A detailed file of that process can be found (here)[2].</p>
+<pre class="r"><code>options(stringsAsFactors = F, scipen = 99)
+
+# List packages used
+pks &lt;- c(&quot;rvest&quot;, &quot;ggplot2&quot;, &quot;purrr&quot;, &quot;tidyverse&quot;, &quot;tidycensus&quot;,
+         &quot;stringr&quot;, &quot;lubridate&quot;, &quot;fs&quot;, &quot;knitr&quot;, &quot;xlsx&quot;, &quot;readxl&quot;, &quot;scales&quot;)
+
+# Load packages used
+invisible(lapply(pks, require, character.only = T))
+
+##################################################
+# NOTE                                          #
+# This will need to be updated by the user      #
+# depending on where the data they dl is stored #
+##################################################
+
+main_dir &lt;- paste0(path_home_r(), &quot;/R/2018/FHA-Orig/&quot;)
+data_dir &lt;- paste0(main_dir, &quot;data/&quot;)</code></pre>
+<div id="read-in-data-that-has-already-been-downloaded" class="section level2">
+<h2>Read-in Data that Has Already Been Downloaded</h2>
+<p>We will use the function created above to download the single .csv file stored locally containing all of the data produced by FHA from January 18 - August 18.</p>
+<pre class="r"><code>fha_ref_url &lt;- &quot;https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/ref_file/1_ref_var_definitions.csv&quot;
+d_ref_col_nms &lt;- read_csv(fha_ref_url)
+
+fname &lt;- dir_ls(main_dir, regexp = &quot;FHA-Orig-2018&quot;)
+
+d_full &lt;- read.csv(fname, header = T)
+
+# Set colnames with the reference file
+colnames(d_full) &lt;- d_ref_col_nms$var_name
+
+d_full &lt;- d_full%&gt;%
+  arrange(dt_yr_endorse, dt_mo_endorse)</code></pre>
+<pre class="r"><code>ggplot(d_full, aes(x = dt_mo_endorse, fill = loan_purpose, group = loan_purpose))+
+  geom_bar(stat = &quot;count&quot;)+
+  scale_fill_manual(values = c(&quot;darkred&quot;, &quot;navy&quot;, &quot;dodgerblue2&quot;), &quot;Loan Purpose&quot;)+
+  scale_y_continuous(label = comma)+
+  scale_x_continuous(breaks = c(seq(min(d_full$dt_mo_endorse), max(d_full$dt_mo_endorse), 1)),
+                 label = function(x) paste0(&quot;MO-&quot;, x))+
+  labs(title = &quot;FHA Portfolio Snapshot&quot;,
+       subtitle = paste0(&quot;Data through: &quot;, month.abb[max(d_full$dt_mo_endorse)],
+                         &quot;-&quot;, max(d_full$dt_yr_endorse)),
+       caption = &quot;HUD/FHA&quot;,
+       x = NULL,
+       y = &quot;Count Originated&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;)</code></pre>
+<p><img src="/post/2018-11-23-fha-originations-as-of-aug-18_files/figure-html/plotViz-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>

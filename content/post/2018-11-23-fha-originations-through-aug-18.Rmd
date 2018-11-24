@@ -1,0 +1,57 @@
+---
+title: FHA Originations - Through Aug-18
+author: ''
+date: '2018-11-23'
+slug: fha-originations-through-aug-18
+categories: []
+tags: []
+---
+
+The Federal Housing Administration is an agency within HUD that provides a federal guarantee (endorsement), for loans originated in the primary marketplace. Each month, the agency publishes a (monthly snapshot)[1], for purposes of demonstrating the lenders, mortgage type, geography and financing terms for mortgages it ensures. 
+
+For purposes of this exercise, all of the data has already been downloaded locally, transformed and saved for purposes of loading directly into R for visualization. A detailed file of that process can be found (here)[2]. 
+
+```{r echo = T, eval = T, warning = F, message = F}
+
+options(stringsAsFactors = F, scipen = 99)
+
+# List packages used
+pks <- c("rvest", "ggplot2", "purrr", "tidyverse", "tidycensus",
+         "stringr", "lubridate", "fs", "xlsx", "readxl", "scales")
+
+# Load packages used
+invisible(lapply(pks, require, character.only = T))
+
+read_in_fha_orig <- function(vec_file_nms){
+  d_purchase <- map_df(vec_file_nms, ~read_excel(path = ., sheet = 3, col_names = F, skip = 1))
+  d_refi <- map_df(vec_file_nms, ~read_excel(path = ., sheet = 4, col_names = F, skip = 1))
+  d_full <- bind_rows(d_purchase, d_refi)
+  return(d_full)
+}
+
+
+```
+
+## Read-in Data that Has Already Been Downloaded
+
+We will use the function created above to download the single .csv file stored locally containing all of the data produced by FHA from January 18 - August 18. 
+
+```{r loadData, echo = T, eval = T, warning = F, message = F}
+
+##################################################
+# NOTE                                          #
+# This will need to be updated by the user      #
+# depending on where the data they dl is stored #
+##################################################
+
+setwd(paste0(path_home_r(), "/R/2018/FHA-Orig/"))
+data_dir <- paste0(getwd(), "/data/")
+fnames <- dir_ls(data_dir)
+
+
+```
+
+
+
+[1]: "https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap"
+[2]: ""

@@ -1,0 +1,60 @@
+---
+title: FHA Originations - As of Aug 2018
+author: Stuart I. Quinn
+date: '2018-11-23'
+slug: fha-originations-as-of-aug-2018
+categories: []
+tags: []
+---
+
+
+
+<p>The Federal Housing Administration is an agency within the U.S. Department of Housing and Urban Development, responsible for providing endorsements/insuring financing against residential and multi-family housing. Each month, the Agency publishes a “snapshot” of their current portfolio of loans they have endorsed. These loans are ultimately securitized through another smaller HUD agency called Ginnie Mae, who bundles Government Guaranteed loans that are sold into the secondary market to private investors.</p>
+<pre class="r"><code>#ADMIN
+#-----------------------------------------------------------------------------
+# rm(list = ls())
+# Set options: StringsAsFactors and Non-Scientific Notation
+options(stringsAsFactors = F, scipen = 99)
+
+# List packages used
+pks &lt;- c(&quot;rvest&quot;, &quot;ggplot2&quot;, &quot;purrr&quot;, &quot;tidyverse&quot;, &quot;tidycensus&quot;,
+         &quot;stringr&quot;, &quot;lubridate&quot;, &quot;fs&quot;, &quot;xlsx&quot;, &quot;readxl&quot;, &quot;scales&quot;)
+
+# Load packages used
+invisible(lapply(pks, require, character.only = T))</code></pre>
+<div id="origination-statistics-for-fha-endorsed-loans" class="section level2">
+<h2>Origination Statistics for FHA Endorsed Loans</h2>
+<p>Similar to other posts, we will perform our ETL process through R by: (1) Downloading the data from the site; (2) load the data into R; (3) create subsets and engineer new fields for purposes of gaining further insight into the the volume of loans originated, which are ultimately endorsed by the Government agency.</p>
+<pre class="r"><code># #The code below allows for a user to (i) set a wd; (ii) create a &#39;data&#39; subdirectory
+# # (iii) Create an env var to check if the file has already been downloaded
+
+# setwd(paste0(path_home_r(), &quot;/R/2018/FHA-Orig/&quot;))
+# 
+# # Check to see if data folder exists in working directory, if no, create
+# if(is_dir(paste0(getwd(), &quot;/data/&quot;))==F){
+#   dir_create(paste0(getwd(), &quot;/data/&quot;))
+#   print(&quot;Directory &#39;data&#39; created in working directory&quot;)
+# }else{
+#   f_cnt &lt;- length(dir_ls(paste0(getwd(), &quot;/data/&quot;)))
+#   print(paste0(&quot;Directory already exists and contains&quot;, f_cnt, &quot;files&quot;))
+# }
+# 
+# # Get data direcotry
+# data_dir &lt;- paste0(getwd(), &quot;/data/&quot;)
+# 
+# # Check to see if files already exist
+# fn_exists_already &lt;- dir_ls(data_dir)
+
+# Function to read in all FHA data that is downloaded, where sheet 3 = Purchase Loans
+# Sheet 4 = Refinance transactions
+
+read_in_fha_orig &lt;- function(vec_file_nms){
+  d_purchase &lt;- map_df(vec_file_nms, ~read_excel(path = ., sheet = 3, col_names = F, skip = 1))
+  d_refi &lt;- map_df(vec_file_nms, ~read_excel(path = ., sheet = 4, col_names = F, skip = 1))
+  d_full &lt;- bind_rows(d_purchase, d_refi)
+  return(d_full)
+}</code></pre>
+</div>
+<div id="get-the-data-urls-download-and-read-in-data" class="section level2">
+<h2>Get the Data URLs, Download and Read-in Data</h2>
+</div>
