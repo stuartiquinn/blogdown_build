@@ -26,11 +26,11 @@ tags:
 </blockquote>
 <p>For this analysis, we will use the most recently published data reported in Q3-2018.</p>
 <ul>
-<li><a href="https://www.census.gov/housing/hvs/data/histtabs.html">Census Historical HVS Data Site</a></li>
-<li><a href="https://raw.githubusercontent.com/stuartiquinn/datasets/master/CPS-HVS-Homeownership/hvs_homeownership_dl_helper.R">Table 19 - Quarterly Homeownership Rates by Age of Householder</a></li>
+<li><a href="https://www.census.gov/housing/hvs/index.html">Census Historical HVS Data Site</a></li>
+<li><a href="https://www.census.gov/housing/hvs/data/histtabs.html">Table 19 - Quarterly Homeownership Rates by Age of Householder</a></li>
 <li>Note the above link is a direct download of the Excel file</li>
 </ul>
-<p>For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found (here)<a href="https://www.brodrigues.co/blog/2017-03-29-make-ggplot2-purrr/#">5</a>. <strong>Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.</strong></p>
+<p>For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found <a href="https://raw.githubusercontent.com/stuartiquinn/datasets/master/CPS-HVS-Homeownership/hvs_homeownership_dl_helper.R">here</a>. <strong>Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.</strong></p>
 <pre class="r"><code># rm(list = ls())
 # Optional - don&#39;t treat strings as factors, 
 # no scientific notation for large #&#39;s
@@ -40,7 +40,7 @@ options(stringsAsFactors = F, scipen = 99)
 # UPDATE TO INSTALL IF DON&#39;T EXISt
 pks &lt;- c(&quot;ggplot2&quot;, &quot;stringr&quot;, &quot;tidyverse&quot;, &quot;knitr&quot;,
          &quot;lubridate&quot;, &quot;fs&quot;, &quot;purrr&quot;, &quot;scales&quot;, &quot;tidyr&quot;,
-         &quot;gridExtra&quot;, &quot;grid&quot;, &quot;kableExtra&quot;)
+         &quot;gridExtra&quot;, &quot;grid&quot;, &quot;kableExtra&quot;, &quot;printr&quot;)
 
 invisible(lapply(pks, require, character.only = T))
 
@@ -221,5 +221,18 @@ invoke(grid.arrange, p_all$plots_by_cohort, top = textGrob(&quot;Homeownership R
     bottom = textGrob(&quot;U.S. Census, CPS/HVS&quot;, hjust = 1, x = 0.9, gp = gpar(fontface = &quot;italic&quot;, 
         fontsize = 8)))</code></pre>
 <p><img src="/post/2018-11-24-visualizing-the-homeownership-rate-in-the-u-s_files/figure-html/plotViz-1.png" width="1056" style="display: block; margin: auto;" /></p>
+<p>For a more detailed look, we will make a plot of just the National and &lt;35 age cohort over a short time period.</p>
+<pre class="r"><code>p_subset &lt;- p_all%&gt;%
+  filter(variable %in% c(&quot;national&quot;, &quot;under_35_years&quot;))%&gt;%
+  mutate(data_sub = map(data, ~filter(., year(full_dt) &gt; 2009)), 
+         plots_by_cohort_sub = map2(plots_by_cohort, data_sub, ~.x%+%.y))
+
+lapply(seq_along(p_subset$plots_by_cohort_sub), 
+       function(x) p_subset$plots_by_cohort_sub[[x]])</code></pre>
+<pre><code>## [[1]]</code></pre>
+<p><img src="/post/2018-11-24-visualizing-the-homeownership-rate-in-the-u-s_files/figure-html/plotViz2-1.png" width="1056" style="display: block; margin: auto;" /></p>
+<pre><code>## 
+## [[2]]</code></pre>
+<p><img src="/post/2018-11-24-visualizing-the-homeownership-rate-in-the-u-s_files/figure-html/plotViz2-2.png" width="1056" style="display: block; margin: auto;" /></p>
 </div>
 </div>

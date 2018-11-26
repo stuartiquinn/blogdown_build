@@ -25,11 +25,11 @@ There are a number of different surveys used by economists to evaluate the numbe
 
 For this analysis, we will use the most recently published data reported in Q3-2018.
 
-* [Census Historical HVS Data Site][3]
-* [Table 19 - Quarterly Homeownership Rates by Age of Householder][4]
+* [Census Historical HVS Data Site][2]
+* [Table 19 - Quarterly Homeownership Rates by Age of Householder][3]
   + Note the above link is a direct download of the Excel file
 
-For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found (here)[5].
+For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found [here][4].
 **Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.**
 
 ```{r adminSetup, echo = T, eval = T, message = F, warning = F, highlight = T}
@@ -42,7 +42,7 @@ options(stringsAsFactors = F, scipen = 99)
 # UPDATE TO INSTALL IF DON'T EXISt
 pks <- c("ggplot2", "stringr", "tidyverse", "knitr",
          "lubridate", "fs", "purrr", "scales", "tidyr",
-         "gridExtra", "grid", "kableExtra")
+         "gridExtra", "grid", "kableExtra", "printr")
 
 invisible(lapply(pks, require, character.only = T))
 
@@ -153,6 +153,19 @@ invoke(grid.arrange, p_all$plots_by_cohort,
 
 ```
 
+For a more detailed look, we will make a plot of just the National and <35 age cohort over a short time period. 
+
+```{r plotViz2, eval = T, echo = T, warning = F, message = F, fig.align="center", fig.height = 7, fig.width = 11}
+
+p_subset <- p_all%>%
+  filter(variable %in% c("national", "under_35_years"))%>%
+  mutate(data_sub = map(data, ~filter(., year(full_dt) > 2009)), 
+         plots_by_cohort_sub = map2(plots_by_cohort, data_sub, ~.x%+%.y))
+
+lapply(seq_along(p_subset$plots_by_cohort_sub), 
+       function(x) p_subset$plots_by_cohort_sub[[x]])
+
+```
 
 [1]: https://www.calculatedriskblog.com/2018/09/lawler-household-estimates-conundrum.html
 [2]: https://www.census.gov/housing/hvs/index.html
