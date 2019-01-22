@@ -226,10 +226,9 @@ p1 <- ggplot(d_bigram_sub, aes(x = dt_yr, y = grp_cnt, fill = party, group=party
 
 
 ggsave("Political-Platform-Use-of-Antitrust.png", p1, width = 9, height = 7,bg = "transparent")
-
 ```
 
-
+![](/png-plots/jan-issue/Political-Platform-Use-of-Antitrust.png)
 
 [1]: https://www.siq-blog.com/2019/01/21/visualization-practice-in-r-economist-replication/
 [2]: https://www.presidency.ucsb.edu/documents/presidential-documents-archive-guidebook/national-political-party-platforms
