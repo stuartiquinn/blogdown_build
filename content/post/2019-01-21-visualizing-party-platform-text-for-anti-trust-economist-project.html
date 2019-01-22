@@ -1,0 +1,201 @@
+---
+title: Visualizing Party Platform Text for Anti-Trust (Economist Project)
+author: Stuart I. Quinn
+date: '2019-01-21'
+slug: visualizing-party-platform-text-for-anti-trust-economist-project
+categories:
+  - R
+  - Politics
+tags:
+  - DataViz
+  - TextAnalysis
+  - EconViz
+---
+
+
+
+<div id="background" class="section level2">
+<h2>Background</h2>
+<p>As I mentioned in a <a href="https://www.siq-blog.com/2019/01/21/visualization-practice-in-r-economist-replication/">previous post</a> – this is the second graph from my replication of The Economist graphs. I have discovered that not all of the data/visuals within the Economist come from free sources, nor provide extensive details around any sort of “author’s calculations.” This greatly reduces the reproducibility of a number of my favorite and insightful charts from each issue. With that said, I spent some extra time attempting to re-create the feature article within January 2017 - Week 2. Fortunately, I was familiar with the source of data since I have previously built wordclouds based on State of the Union Speeches (or SOTUS for the beltway crowd).</p>
+<p>This post takes political party platform data to evaluate the diminishing mentions of Anti-Trust. Since this analysis is somewhat data intensive, I am not going to host all of the information, but I’ll try to provide enough documentation for others to re-create the visual.</p>
+<div id="magazine-details" class="section level3">
+<h3>Magazine Details</h3>
+<p><strong>January 2017 - Week 2</strong></p>
+<p><strong>Issue Title:</strong> The New Titan’s and How to Tame Them</p>
+<p><strong>Article Title:</strong> Coping with Techlash</p>
+<p><strong>Graph Title:</strong> Monopoly is not a game</p>
+<p><strong>Article Page Number:</strong> 19</p>
+</div>
+<div id="data-details" class="section level3">
+<h3>Data Details</h3>
+<p><strong>Data Source:</strong> UC Santa Barbara, Presidents Project</p>
+<p><strong>Data Base Link:</strong> <a href="https://www.presidency.ucsb.edu/documents/presidential-documents-archive-guidebook/national-political-party-platforms">Here</a></p>
+<p><strong>Data Category:</strong> U.S. Politics</p>
+</div>
+</div>
+<div id="about-the-data" class="section level2">
+<h2>About the Data</h2>
+<p>If you are not familiar with the UC Santa Barbara, Presidents Project and are a fan of politics – you should definitely visit the site. The number of documents and dedication to cataloging is incredibly impressive and seamless to search through. The organization also does their own great bit of analysis with the data as well.</p>
+<p>We will focus on the National Political Party platforms that have been catalogued by the non-profit.</p>
+<pre class="r"><code>pks &lt;- c(&quot;tidyverse&quot;, &quot;purrr&quot;, &quot;tools&quot;, &quot;fs&quot;, &quot;lubridate&quot;, 
+         &quot;stringr&quot;, &quot;readxl&quot;, &quot;ggthemes&quot;, &quot;tidytext&quot;, &quot;rvest&quot;)
+
+
+invisible(lapply(pks, require, character.only = T))</code></pre>
+</div>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>As I mentioned, I will not be executing the code below – however, this provides how the data can be quickly downloaded locally for replicating/further analysis.</p>
+<pre class="getdata"><code>
+# HTML Table with links to party platform
+
+base_url &lt;- &quot;https://www.presidency.ucsb.edu/documents/presidential-documents-archive-guidebook/national-political-party-platforms&quot;
+
+# xpath of the table to get all permalinks of platform text
+site_xpath &lt;- &quot;//*[@id=&#39;block-system-main&#39;]/div/div/div/div[2]/table&quot;
+
+set_col_nms &lt;- c(&quot;dt_yr&quot;, &quot;party&quot;, &quot;nominee&quot;, &quot;electoral_votes&quot;, &quot;word_cnt&quot;)
+
+# Get text from tables so we know what is contained within the links
+d_txt_full &lt;- read_html(base_url)%&gt;%
+  html_nodes(xpath = site_xpath)%&gt;%
+  html_table(fill=T)%&gt;%
+  .[[1]]%&gt;%
+  .[-1, -3]
+
+# Capture notes from data, then we will remove them once we have
+# them stored in another object
+d_notes &lt;- d_txt_full[nrow(d_txt_full), ]
+
+# Identify which rows have years so we can remove unnecessary rows
+# (and have clean numeric years)
+d_txt_clean &lt;- d_txt_full%&gt;%
+  .[-nrow(.),]%&gt;%
+  setNames(., set_col_nms)%&gt;%
+  mutate(row_remove = if_else(str_length(dt_yr) &gt; 2, 0, 1),
+         word_cnt = as.numeric(str_replace_all(word_cnt, pattern=&quot;[^0-9]&quot;, &quot;&quot;)))%&gt;%
+  filter(row_remove == 0)%&gt;%
+  select(-row_remove)
+
+# Create a dataframe with two columns: 
+# Col1 = All of the links
+# Col2 = The text 
+d_url_full &lt;- bind_cols(
+  read_html(base_url)%&gt;%
+    html_nodes(xpath = site_xpath)%&gt;%
+    html_nodes(&quot;a&quot;)%&gt;%
+    html_attr(&quot;href&quot;)%&gt;%
+    as_tibble(),
+  read_html(base_url)%&gt;%
+    html_nodes(xpath = site_xpath)%&gt;%
+    html_nodes(&quot;a&quot;)%&gt;%
+    html_text()%&gt;%
+    as_tibble)%&gt;%
+  setNames(., c(&quot;txt_url&quot;, &quot;format&quot;))%&gt;%
+  filter(format != &quot;pdf&quot;)%&gt;%
+  mutate(format = paste0(format,&quot;-HTML&quot;))
+
+# Combine notes and references within a single dataframe
+d_notes &lt;- bind_cols(d_notes, d_url_full[nrow(d_url_full), ])
+
+# Create a dataframe with url for dloading, party name and year
+# of platform
+d_ref_txt &lt;- bind_cols(d_txt_clean, d_url_full[-nrow(d_url_full), ])
+
+# Loop through the datafram we just created in order to 
+# download all of the text from the site urls and save the files
+# with National party name (e.g. Dem v. GOP) and year
+
+for(i in seq(nrow(d_ref_txt))){
+
+  text &lt;- read_html(d_ref_txt$txt_url[i])%&gt;%
+  html_nodes(xpath = &quot;//*[@id=&#39;block-system-main&#39;]/div/div/div[1]/div[3]&quot;) %&gt;% # isloate the text
+  html_text() # get the text
+
+  fname &lt;- paste0(d_ref_txt$dt_yr[i], d_ref_txt$party[i], &quot;-&quot;,
+                  str_replace_all(d_ref_txt$nominee[i],pattern=&quot; &quot;, &quot;&quot;), &quot;.txt&quot;)
+
+  sink(file = fname) %&gt;% # open file to write
+    cat(text)  # write the file
+  sink() # close the file
+}
+</code></pre>
+</div>
+<div id="load-and-clean-data" class="section level2">
+<h2>Load and Clean Data</h2>
+<p>Now that we have all of the text for each party, for each year – we can load the text in for analysis.</p>
+<pre class="loaddata"><code>
+# the directory where you downloaded all of the text files
+wd_txt &lt;- paste0(getwd(), &quot;YOUR DIRECTORY HERE&quot;)
+
+# Get file names
+f_gop &lt;- dir_ls(wd_txt, regexp = &quot;Repub&quot;)
+f_dem &lt;- dir_ls(wd_txt, regexp = &quot;Demo&quot;)
+
+# Load data into R environment
+d_txt_full &lt;- bind_rows(f_gop%&gt;%
+                          map_chr(~read_file(.))%&gt;%
+                          data_frame(text = .)%&gt;%
+                          mutate(party = &quot;GOP&quot;, 
+                                 dt_yr = as.numeric(str_sub(basename(f_gop), 0,4))),
+                        f_dem%&gt;%
+                          map_chr(~read_file(.))%&gt;%
+                          data_frame(text = .)%&gt;%
+                          mutate(party = &quot;DEMOCRATS&quot;, 
+                                dt_yr = as.numeric(str_sub(basename(f_dem), 0,4))))
+</code></pre>
+<div id="cleaning-steps" class="section level4">
+<h4>Cleaning Steps</h4>
+<p>For some of the language used here, refer to the free online book for Text Mining in R with the package tidytext (<a href="https://www.tidytextmining.com/">link</a>)</p>
+<ol style="list-style-type: decimal">
+<li>Get all of the file names within the direcotry by party</li>
+<li>Load all of the text files by party, creating a new column representing which party and year</li>
+<li>Bind the data together by rows so all of the text is in a single dataframe</li>
+<li>Once we have the data, we need to create unique rows for “bigrams” or by each two consecutive words within the text</li>
+<li>Finally, we need to clean the search word we’re interested in (Anti-Trust). With any text analysis, there is some ambiguity about locating all of the references.</li>
+</ol>
+<p>For example, it could be Anti-Trust, anti trust, antitrust or something evermore vague like the Sherman Act (the primary statute implementing Anti-Trust laws)</p>
+</div>
+<div id="aggregation-steps" class="section level4">
+<h4>Aggregation Steps</h4>
+<ol style="list-style-type: decimal">
+<li>Once we have our “bigrams” with antitrust, we need to group them by party and year, in order to get a frequency of use.</li>
+</ol>
+<pre class="cleandata"><code>
+d_bigram &lt;- d_txt_full%&gt;%
+  unnest_tokens(bigram, text, token = &quot;ngrams&quot;, n = 2)%&gt;%
+  group_by(bigram, party, dt_yr)%&gt;%
+  summarize(bigram_cnt = n())%&gt;%
+  arrange(desc(bigram_cnt))%&gt;%
+  ungroup()
+
+d_at_bigrams &lt;- d_bigram%&gt;%
+  mutate(bigram_trim = str_replace_all(bigram, pattern = &quot; &quot;, &quot;&quot;))%&gt;%
+  filter(grepl(bigram_trim, pattern = &quot;antitrust&quot;, ignore.case = T))
+
+d_bigram_sub &lt;- d_bigram%&gt;%
+  mutate(bigram_trim = str_replace_all(bigram, pattern = &quot; &quot;, &quot;&quot;))%&gt;%
+  filter(grepl(bigram_trim, pattern = &quot;antitrust&quot;, ignore.case = T))%&gt;%
+  group_by(dt_yr, party)%&gt;%
+  summarize(grp_cnt = sum(bigram_cnt, na.rm = T))%&gt;%
+  ungroup()%&gt;%
+  mutate(dt_full = as.Date(paste(dt_yr, &quot;01&quot;, &quot;01&quot;, sep = &quot;-&quot;)))%&gt;%
+  arrange(dt_yr, party)
+</code></pre>
+</div>
+</div>
+<div id="plot-data" class="section level2">
+<h2>Plot Data</h2>
+<p>We will create a time-series barplot based on the number of bigrams using the term Anti-Trust within each parties platform text.</p>
+<pre class="r"><code>p1 &lt;- ggplot(d_bigram_sub, aes(x = dt_yr, y = grp_cnt, fill = party, group = party)) + 
+    geom_bar(stat = &quot;identity&quot;, position = position_dodge2(width = 0.9, preserve = &quot;single&quot;)) + 
+    scale_fill_manual(values = c(&quot;navy&quot;, &quot;darkred&quot;), name = NULL) + scale_x_continuous(breaks = c(seq(1900, 
+    2010, 10), 2016)) + labs(title = &quot;Monopoly is not a game&quot;, subtitle = &quot;Mentions of &#39;antitrust&#39; in Democratic and Republican platforms&quot;, 
+    x = NULL, y = NULL, caption = &quot;Source:UC Santa Barbara - President&#39;s Project, bigram counts&quot;) + 
+    theme_minimal() + theme(legend.position = &quot;top&quot;)
+
+
+
+ggsave(&quot;Political-Platform-Use-of-Antitrust.png&quot;, p1, width = 9, height = 7, 
+    bg = &quot;transparent&quot;)</code></pre>
+</div>
