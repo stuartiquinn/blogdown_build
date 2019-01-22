@@ -134,7 +134,7 @@ d_sub <- d%>%
 
 ```
 
-##Build Plot - Pyramid Plot
+## Build Plot - Pyramid Plot
 
 Pyramid plots are the most frequently utilized tool for evaluating demographic trends within a geography. Since population demographics are a massive contributor to economic measures (especially housing), it is important to know how much of the population is of prime working age, entering retirement or somewhere in between. Generally a younger population indicates pent up economic output that will be realized in the future, while a large aging population is more concerning since there will be less overall contribution to the economy (and sometimes even a drag depending on the social programs within the country -- think healthcare as an example)
 
