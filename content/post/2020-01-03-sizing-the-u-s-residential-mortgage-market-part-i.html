@@ -1,0 +1,253 @@
+---
+title: Sizing the U.S. Residential Mortgage Market (Part I)
+author: ''
+date: '2020-01-03'
+slug: sizing-the-u-s-residential-mortgage-market-part-i
+categories:
+  - Economy
+  - Housing
+tags:
+  - EconViz
+  - Housing
+  - tidyquant
+---
+
+
+
+<div id="sizing-u.s.-residential-mortgage-markets" class="section level3">
+<h3>Sizing U.S. Residential Mortgage Markets</h3>
+<p>The U.S. residential mortgage market is one of the most unique in the world given the secondary market financing structure enabled by private market participants and government programs. It is followed not only by your average consumer looking for shelter, but also by:</p>
+<ul>
+<li>politicians at every jurisdictional level</li>
+<li>advocates and academics</li>
+<li>investors and analysts and</li>
+<li>regulators</li>
+</ul>
+<p>Just to name a few….</p>
+</div>
+<div id="a-quick-rundown-on-terminology" class="section level3">
+<h3>A quick rundown on terminology</h3>
+<p>There thousands of metrics and measure monitored to evaluate opportunities and lurking risks in housing. This first post will simply cover some of the key aggregate national market measures.
+First, a few key <strong>terms</strong> and definitions:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Residential:</strong> Generally (and for this post), we mean 1 - 4 unit single family residences / duplexes and town homes (some measures include manufactured housing as well).</li>
+<li><strong>Mortgage:</strong> Financing instrument with accompanying deed indicating the amount owed (debt). This will exclude rentals and leases</li>
+<li><strong>Origination:</strong> The face value of money owed on the mortgage note when closing</li>
+<li><strong>Debt:</strong> Remaining balance owed by an individual to a financial institution</li>
+<li><strong>Equity:</strong> Value owned by an indivdaidual or non-profit through principal payments on mortgage and/or accrued through appreciation in the house and the land it is affixed.</li>
+</ol>
+<p>Measure types:</p>
+<ol style="list-style-type: decimal">
+<li>Stock: The total level of the unit in question</li>
+<li>Flow: The inflow or outflow of the unit in question modifying the total stock of unit</li>
+</ol>
+<p>These are very high-level summary of terms – there are a myriad of sources that unwind the nuances and criteria.</p>
+</div>
+<div id="so-just-how-big-of-a-market-is-it" class="section level3">
+<h3>So just how big of a market is it?</h3>
+<p>For this post, we’ll cover a standard set of metrics. Each metric varies slightly and helps analysts or individuals understand the magnitude of the U.S. residential housing market in terms of $’s.</p>
+<ol style="list-style-type: decimal">
+<li><p>Annual Originations (Flow | $’s): The number of new mortgages (purchase loans and re-finances). (Flow Metric)</p></li>
+<li><p>Mortgage Share as Percent of Originations (Flow | %): The percent of originations in $’s as a percent of total originations, segmented by the end investor who owns rights to the underlying asset in the event of non-repayment.</p></li>
+<li><p>Total Homeowners Equity (Stock | $): The amount of equity/value available to individuals who own their home partially or outright</p></li>
+</ol>
+</div>
+<div id="note-about-the-code" class="section level3">
+<h3>Note about the code</h3>
+<p>The work horse for this analysis (and most analysis) is tidyverse, tidyquant and lubridate. Since we are working with time-series data, tidyquant is of particular use given it’s ability to call the St. Louis maintained Federal Reserve Economic Data <a href="https://research.stlouisfed.org/about.html" title="St. Louis Federal Reserve Bank">(FRED) datasets</a> quickly into your environment.</p>
+<p>Data is sourced primarily from government sources, though some data is tracked and published by commercial entities.</p>
+</div>
+<div id="data-analysis" class="section level3">
+<h3>Data Analysis</h3>
+<div id="origination-volume-by-loan-purpose" class="section level4">
+<h4>Origination volume by loan purpose</h4>
+<p>There are thousands of lenders originating mortgages on a daily basis within the U.S., therefore, it is very difficult to get a real-time actual data so forecasting as necessary. Within the housing industry, you will generally see experts cite an average of multiple forecasts.</p>
+<p>Below you can find the average quarterly estimates produced by <a href="https://www.fanniemae.com/portal/research-insights/forecast.html" title="Fannie Mae Forecasts">Fannie Mae</a>, <a href="http://www.freddiemac.com/research/forecast/index.page" title="Freddie Mac Forecasts">Freddie Mac</a> and the <a href="https://www.mba.org/news-research-and-resources/research-and-economics/forecasts-and-commentary" title="Mortgage Bankers Association Forecasts">Mortgage Bankers Association</a>. These estimates are revised on a monthly basis by their team’s of economists to try to understand the expected annual volume of mortgage originations.</p>
+</div>
+<div id="load-data-from-local-source-see-references-for-detail" class="section level4">
+<h4>1. Load data from local source (see references for detail)</h4>
+<pre class="r"><code>fname &lt;- &quot;../../static/data/1_mtg_mkt_share/20190102_Combined_Mtg_Size_File.xlsx&quot;
+
+ref_sheet_nm &lt;- excel_sheets(fname)
+
+d_orig &lt;- read_excel(fname, sheet = ref_sheet_nm[1])</code></pre>
+</div>
+<div id="aggregate-data-to-averages" class="section level4">
+<h4>2. Aggregate data to averages</h4>
+<pre class="r"><code>d_orig_avg &lt;- d_orig%&gt;%
+  mutate(dt_full = ymd(dt_full))%&gt;%
+  group_by(dt_full, loan_purpose)%&gt;%
+  summarize(avg_vol_bil = mean(value, na.rm = T))%&gt;%
+  ungroup()%&gt;%
+  mutate(cln_lab = paste0(&quot;$&quot;, prettyNum(round(avg_vol_bil, 0),big.mark = &quot;,&quot;)))
+
+est_avg19 &lt;- filter(d_orig_avg, year(dt_full) == 2019)%&gt;%
+  group_by(loan_purpose)%&gt;%
+  summarize(tot19_bil = sum(avg_vol_bil, na.rm = T))%&gt;%
+  spread(loan_purpose, tot19_bil)%&gt;%
+  mutate(Title = &quot;Total Est. Origination ($B)&quot;, 
+         `Est. Total` = Purchase + Refinance)%&gt;%
+  select(Title, Purchase, Refinance, `Est. Total`)%&gt;%
+  mutate_if(is.numeric, ~.x%&gt;%round(.,0)%&gt;%prettyNum(., big.mark = &quot;,&quot;))</code></pre>
+</div>
+<div id="plot-originations" class="section level4">
+<h4>3. Plot Originations</h4>
+<pre class="r"><code>p1_orig &lt;- d_orig_avg%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = dt_full, y = avg_vol_bil, fill = loan_purpose), 
+           position = &quot;stack&quot;)+
+  scale_fill_viridis_d(&quot;&quot;)+
+  scale_x_date(date_labels = &quot;%Y-%m&quot;, date_breaks = &quot;3 months&quot;)+
+  scale_y_continuous(label = dollar)+
+  labs(title = &quot;Avg. estimated quarterly originations&quot;, 
+       subtitle = &quot;By loan purpose&quot;, 
+       x = NULL, 
+       y = &quot;$B&quot;, 
+       caption = &quot;Source: MBA, Fannie Mae, Freddie Mac&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;)
+  
+p1_orig</code></pre>
+<p><img src="/post/2020-01-03-sizing-the-u-s-residential-mortgage-market-part-i_files/figure-html/vizOrig-1.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>est_avg19%&gt;%
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Title</th>
+<th align="left">Purchase</th>
+<th align="left">Refinance</th>
+<th align="left">Est. Total</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Total Est. Origination ($B)</td>
+<td align="left">1,272</td>
+<td align="left">835</td>
+<td align="left">2,107</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="investor-share-as-percent-of-origination-volume" class="section level3">
+<h3>Investor share as percent of origination volume</h3>
+<p>This metric measures who those originations are ultimately sold to in the secondary market. There are a variety of different “disposition” or “execution” strategies, but the majority of the market has and continues to be government (Federal Housing Administration (FHA), Veteran’s Administration (VA) or quasi government agencies such as Fannie Mae (FNMA) and Freddie Mac (FRE). Together FNMA and FRE are referred to as the GSEs (or Government Sponsored Enterprises)</p>
+<p>Private financial institutions purchase mortgage back securities from FNMA/FRE and Ginnie Mae (who structures FHA/VA/USDA loans into securities). Similarly, some private entities create their own Private Label Securities (PLS) or hold loans on their portfolio.</p>
+<p>The data below is produced by <a href="https://www.insidemortgagefinance.com/" title="Inside Mortgage Finance (IMF)">Inside Mortgage Finance (IMF)</a> a commercial entity, but the data was sourced from the <a href="https://home.treasury.gov/system/files/261/FSOC2018AnnualReport.pdf" title="U.S. Treasure, Financial Stability Oversight Council, 2018 Annual report">U.S. Treasurey Financial Stability Oversight Council</a> and the <a href="https://www.urban.org/policy-centers/housing-finance-policy-center/projects/housing-finance-glance-monthly-chartbooks" title="Urban Institute, Housing Finance Policy Center">Urban Institute</a>.</p>
+<p>We will follow the same steps for this data.</p>
+<pre class="r"><code>d_inv_share &lt;- read_excel(fname, ref_sheet_nm[2])%&gt;%
+  mutate(dt_yr = year(dt_yr))%&gt;%
+  rename(`FHA/VA` = fha_va, GSEs = gse, `PLS/Balance Sheet` = pls_portfolio)%&gt;%
+  select(-note)%&gt;%
+  gather(variable, value, -dt_yr)
+
+
+d_labs &lt;- d_inv_share%&gt;%
+  group_by(variable)%&gt;%
+  slice(which.max(dt_yr))%&gt;%
+  ungroup()%&gt;%
+  mutate(clean_label = paste0(value, &quot;%&quot;),
+         clean_ylab = value,
+         clean_xlab = dt_yr+1)%&gt;%
+  select(dt_yr, value, variable, contains(&quot;clean&quot;))
+
+
+p1_inv &lt;- ggplot(data = d_inv_share, aes(x = dt_yr, y = value, group = variable, fill = variable))+
+  geom_bar(stat = &quot;identity&quot;, position = &quot;stack&quot;)+
+  scale_fill_viridis_d()+
+  scale_x_continuous(breaks = seq(min(d_inv_share$dt_yr), max(d_inv_share$dt_yr), 1))+
+  # geom_text(data = d_labs, position = &quot;stack&quot;,
+  #           aes(x=2019, y = clean_ylab, label=clean_label, group = variable), 
+  #           vjust = 0.5, hjust = -0.5, angle = 90)+
+  labs(title = &quot;Total new originations by investor&quot;,
+       subtitle = &quot;Percent share, 2019 data through Q2&quot;,
+       x = NULL,
+       y = &quot;% share&quot;,
+       caption = &quot;Inside Mortgage Finance, Urban Institute, UST-FSOC&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;, 
+        legend.title = element_blank(), 
+        axis.text.x = element_text(angle = 90))
+
+p1_inv</code></pre>
+<p><img src="/post/2020-01-03-sizing-the-u-s-residential-mortgage-market-part-i_files/figure-html/invShare-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="total-homeowner-equity" class="section level3">
+<h3>Total Homeowner Equity</h3>
+<p>Homeowner equity is an important metric in understanding wealth effects in the broader economy. There are two main components which drive this figure: (i) age of the mortgage (i.e. how many payments towards acquiring the asset as a homeowner made); (ii) home price valuations.</p>
+<p>The data we’re utilizing is produced by the Federal Reserve (FRB) and is aggregated in what was previously known as their flow of funds reports, now “The Financial Accounts of the United States.” In further posts, we’ll explore homeowner equity at a more granular level.</p>
+<blockquote>
+<p>For this analysis, we use the tidyquant package, which has a wrapper to easily serve update the data. I utilize this primarily for economic data, but it can also be utilized for stock market information. We will primarily be utilizing the function tidyquant:tq_get(), which is passed a symbol or ticker</p>
+</blockquote>
+<p>We will get all the data at once to make our minimal pre-processing easier.</p>
+<ol style="list-style-type: decimal">
+<li>Create a vector of tickers/symbols OR a tibble for additional context</li>
+<li>Use tidyquant::tq_get to retrieve data</li>
+<li>Do some minor cleaning: (i) convert dates to quarters; (ii) create separated year and month values for future plotting</li>
+</ol>
+<pre class="r"><code># Create tibble of Economic Data of Interest w/ Short Description
+
+fred_base_url &lt;- &quot;https://fred.stlouisfed.org/series/&quot;
+d_tks &lt;- tibble(tks = c(&quot;OEHRENWBSHNO&quot;, &quot;HOEREPHRE&quot;, &quot;MDOTP1T4FR&quot;, &quot;GDP&quot;, 
+                        &quot;CCLBSHNO&quot;, &quot;HHMSDODNS&quot;, &quot;CMDEBT&quot;, &quot;HNODPI&quot;), 
+                title = c(&quot;Households (HH); owners&#39; equity in real estate, Level&quot;, 
+                          &quot;Households; owners&#39; equity in real estate as a percentage of household real estate, Level&quot;, &quot;Mortgage Debt Outstanding by Type of Property: One- to Four-Family Residences&quot;, &quot;Gross Domestic Product, Seasonally Annual Adjusted Rate&quot;, 
+                          &quot;HH Consumer Credit&quot;, &quot;HH Mortgage Debt&quot;, &quot;HH Credit Market Instruments&quot;, &quot;HH Disposable Personal Income&quot;))%&gt;%
+  mutate(row_id = row_number(), 
+         url = paste0(fred_base_url, tks))
+
+
+# LOAD ALL TICKERS 
+# **NOTE** WE WONT BE USING ALL OF THESE METRICS
+
+# tq_get automatically gets a &quot;shorter&quot; time period so we define long-run time-series
+# the function returns the date as a full yyyy-mm-dd given different variables are 
+# reported at different frequency. We know these are all reported quarterly by the fed
+# since they come from the same report
+
+
+# Finally, tickers are great, be we&#39;ll join our reference tibble for future reproducibility 
+# 
+d_eco &lt;- tidyquant::tq_get(x = d_tks$tks, get = &quot;economic.data&quot;, from = &quot;1975-01-01&quot;)%&gt;%
+  mutate(dt_qtr = case_when(
+    month(date) == 1 ~ paste0(year(date), &quot;-Q1&quot;), 
+    month(date) == 4 ~ paste0(year(date), &quot;-Q2&quot;), 
+    month(date) == 7 ~ paste0(year(date), &quot;-Q3&quot;), 
+    month(date) == 10 ~ paste0(year(date), &quot;-Q4&quot;)
+  ))%&gt;%
+  left_join(., select(d_tks, tks, title), by = c(&quot;symbol&quot;=&quot;tks&quot;))%&gt;%
+  rename(value = price)</code></pre>
+<div id="plotting-a-single-metric" class="section level4">
+<h4>Plotting a single metric</h4>
+<pre class="r"><code>d_hh_eq &lt;- filter(d_eco, symbol == &quot;HOEREPHRE&quot;)
+
+p_hh_eq_curr &lt;- d_hh_eq%&gt;%
+  slice(which.max(date))%&gt;%
+  mutate(clean_lab = paste0(dt_qtr, &quot;: &quot;, prettyNum(round(value,0), big.mark = &quot;,&quot;), &quot;%&quot;))%&gt;%
+  select(date, value, clean_lab)
+
+p1_hh_eq &lt;- d_hh_eq%&gt;%
+  ggplot()+
+  geom_line(aes(x = date, y = value), color = &quot;navy&quot;, size = 1.15)+
+  geom_hline(data = p_hh_eq_curr, aes(yintercept = value), color = &quot;darkred&quot;, size = 1.1, linetype = 2)+
+  geom_point(data = p_hh_eq_curr, aes(x = date, y = value), size = 5, color = &quot;darkred&quot;, 
+             alpha = 0.7)+
+  scale_x_date(date_breaks = &quot;3 years&quot;, date_labels = &quot;%Y&quot;)+
+  scale_y_continuous(labels = dollar)+
+  labs(title = &quot;Households (HH) homeowners equity as % of HH real estate&quot;, 
+       subtitle = paste(&quot;As of&quot;, p_hh_eq_curr$clean_lab), 
+       x = NULL,
+       y = &quot;%&quot;, 
+       caption = &quot;U.S. Federal Reserve Board (FRB)&quot;)+
+  theme_minimal()
+
+p1_hh_eq</code></pre>
+<p><img src="/post/2020-01-03-sizing-the-u-s-residential-mortgage-market-part-i_files/figure-html/hhEqViz-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="what-next" class="section level2">
+<h2>What next?</h2>
+<p>Those are just a few metrics, we’ll take a deeper dive in future posts as it relates to: (i) meaningfulness of the data; (ii) alternative metrics to compare against; (iii) components of aggregate measures and maybe even a function to quickly plot future FRB data…</p>
+</div>
