@@ -1,0 +1,158 @@
+---
+title: Seattle Comprehensive Plan - Growth Strategy
+author: Stuart Quinn
+date: '2020-01-14'
+slug: seattle-comprehensive-plan-growth-strategy
+categories:
+  - Housing
+  - Demographics
+tags:
+  - R
+  - Housing
+  - Seattle
+---
+
+
+
+<div id="a-growth-strategy-evolution" class="section level3">
+<h3>A Growth Strategy Evolution</h3>
+<p>Last week the Seattle Planning Commission released an interim white paper titled <a href="https://www.seattle.gov/Documents/Departments/SeattlePlanningCommission/SPC%20Growth%20Strategy%20White%20Paper%201072020(0).pdf" title="Evolving Seattle&#39;s Growth Strategy">Evolving Seattle’s Growth Strategy</a> – foreshadowing their updates to the Commission’s revised Comprehensive Plan due in 2023.</p>
+<p>The white paper, builds off the foundation <a href="https://www.seattle.gov/Documents/Departments/OPCD/OngoingInitiatives/SeattlesComprehensivePlan/FinalGrowthandEquityAnalysis.pdf" title="Growth and Equity">Seattle 2035 - Growth and Equity report (May, 2016)</a> and the Commissions most recent <a href="http://www.seattle.gov/Documents/Departments/SeattlePlanningCommission/SPCNeighborhoodsForAllFINALdigital2.pdf" title="Neighborhoods for All">Neighborhoods for All</a> reports.</p>
+<div id="a-quick-background" class="section level4">
+<h4>A Quick Background</h4>
+<p><strong>The Planning Commission</strong></p>
+<p><em>The Seattle Planning Commission is an independent, 16-member advisory body
+appointed by the Mayor, City Council, and the Commission itself. The members of
+the Commission are volunteers who bring a wide array of expertise and a diversity
+of perspectives to these roles.</em></p>
+<p><strong>The Legal Directive(s)</strong></p>
+<ol style="list-style-type: decimal">
+<li><a href="http://clerk.seattle.gov/search/results?s1=&amp;s3=31164&amp;s2=&amp;s4=&amp;Sect4=AND&amp;l=20&amp;Sect2=THESON&amp;Sect3=PLURON&amp;Sect5=RESNY&amp;Sect6=HITOFF&amp;d=RESF&amp;p=1&amp;u=%2F%7Epublic%2Fresny.htm&amp;r=1&amp;f=G" title="Resolution 31164">2009 - Adoption of Resolution 31164</a></li>
+</ol>
+<blockquote>
+<p>A RESOLUTION affirming the City’s race and social justice work and directing City Departments to use available tools to assist in the elimination of racial and social disparities across key indicators of success, including health, education, criminal justice, the environment, employment and the economy; and to promote equity within the City workplace and in the delivery of City services.</p>
+</blockquote>
+<ol start="2" style="list-style-type: decimal">
+<li><p><a href="http://murray.seattle.gov/wp-content/uploads/2014/04/RSJI-Executive-Order.pdf" title="Executive Order 2014-02">2014 - Executive Order 2014-02</a>
+&gt;This Executive Order affirms the City of Seattle’s commitment to the Race and Social Justice Initiative (RSJI), and expand RSJI’s work to include measurable outcomes, greater accountability, and community wide efforts to achieve racial equity in our community.</p></li>
+<li><p><a href="https://seattle.legistar.com/LegislationDetail.aspx?ID=2269342&amp;GUID=B0DDC78F-6CEC-4E8C-9A1B-CB913457D663" title="Resolution 31577">2015 - Adoption of Resolution 31577</a>
+&gt;A RESOLUTION confirming that the City of Seattle’s core value of race and social equity is one of the foundations on which the Comprehensive Plan is built</p></li>
+</ol>
+<p>The city of Seattle realized early on the potential dark sides of urban growth and attempted to provide thoughtful forward planning through a set of strategic and policy remedies that could potentially stem the strain on current and future residents.Though there are many contributing factors to the cities rapid growth (for instance the beautiful natural amenities, temperate climate, etc.), the reality likely resides more so within the expansion of the technology sector and gainful employment. Amazon company growth and signaling in 2017 of targeting 100,000 new hires, coupled with unaffordable housing conditions in nearby San Francisco likely increased in-migration to the city of Seattle.</p>
+</div>
+</div>
+<div id="net-migration-for-king-county" class="section level3">
+<h3>Net Migration for King County</h3>
+<p>Using the wonderful R package tidycensus, we’ll quickly take a look at annual migration growth for King County, WA (of which Seattle is a part of) with a few lines of code. In addition, we’ll quickly compare the population distributions by race between 2010 and 2018. <strong>Note:</strong> A <a href="https://walkerke.github.io/tidycensus/articles/basic-usage.html" title="tidycensus API detail">U.S. Census api key</a> is required to use tidycensus.</p>
+<p>The majority of the data is self-contained within the tidycensus::get_estimates wrapper calling the API, but we’ll add a few extra steps simply for describing the categories pulled down. As usual, we’ll be utilizing tidyverse (stringr, ggplot2, dplyr, rvest) and the scales package for consuming and plotting the data below.</p>
+<div id="retrieving-the-data-from-census-api" class="section level4">
+<h4>Retrieving the data from Census API</h4>
+<ol style="list-style-type: decimal">
+<li>First we’ll create reference tibbles to join to our data set on code id</li>
+<li>Then source the data from U.S. Census</li>
+</ol>
+<ul>
+<li>Net migration population component (2010 through 2018)</li>
+<li>Proportion of population by race (2018 v. 2010)</li>
+</ul>
+<ol start="3" style="list-style-type: decimal">
+<li>Join reference tables to <a href="https://www.census.gov/data/developers/data-sets/popest-popproj/popest/popest-vars/2018.html" title="U.S. Census PopEst Data Codes">Census data on codes</a></li>
+</ol>
+<pre class="r"><code># Per tidycensus documention, you may need to load API 
+# census_api_key(&quot;YOUR API KEY GOES HERE&quot;)
+
+# Reference Tables: 
+#1. Migration Estimates Reference
+kc_yr &lt;- tibble(ts_per = seq(1,8,1), 
+                ts_yr_from = seq(2010, 2017, 1), 
+                ts_yr_to = seq(2011, 2018, 1), 
+                ts_lab = paste(&quot;From&quot;, ts_yr_from, &quot;to&quot;, ts_yr_to))
+
+#2. Racial Demographic Reference table (using rvest package to scrape table)
+
+# Get site url
+# Once on site, right-click - &gt; inspect to find the html code, then right click to copy 
+# the xpath 
+race_url &lt;- &quot;https://www.census.gov/data/developers/data-sets/popest-popproj/popest/popest-vars/2018.html&quot;
+race_xpath &lt;- &quot;//*[@id=&#39;detailContent&#39;]/div/div/div[8]/div[2]/div[1]/div&quot;
+
+kc_race_ref &lt;- read_html(race_url)%&gt;%
+  html_nodes(xpath = race_xpath)%&gt;%
+  html_nodes(&quot;p&quot;)%&gt;%
+  html_text()%&gt;%
+  tibble(&quot;cd_in&quot;=.)%&gt;%
+  separate(cd_in, sep=&quot;=&quot;, into = c(&quot;race_cd&quot;, &quot;race_desc&quot;))%&gt;%
+  na.omit()%&gt;%
+  mutate(race_cd = as.numeric(race_cd))
+
+
+# Source Data **NOTE** product variable setting
+
+# NET MIGRATION for KING COUNTY, time_series gives us data from 2010 to current
+kc_component &lt;- get_estimates(geography = &quot;county&quot;, state = &quot;53&quot;, 
+                              county = &quot;033&quot;, time_series = T, product = &quot;components&quot;)%&gt;%
+  filter(variable == &quot;NETMIG&quot;)%&gt;%
+  left_join(., kc_yr, by = c(&quot;PERIOD&quot;=&quot;ts_per&quot;))
+
+# Population by Race (raw figures, converted into proporitions)
+# Not product variable and breakdown variable 
+
+kc_race &lt;- bind_rows(
+  get_estimates(geography = &quot;county&quot;, state = &quot;53&quot;, 
+                         county = &quot;033&quot;, year = 2018, product = &quot;characteristics&quot;, 
+                         breakdown = &quot;RACE&quot;)%&gt;%
+    mutate(rep_yr = 2018),
+  get_estimates(geography = &quot;county&quot;, state = &quot;53&quot;, county = &quot;033&quot;, 
+                year = 2015, product = &quot;characteristics&quot;, breakdown = &quot;RACE&quot;)%&gt;%
+    mutate(rep_yr = 2010)
+)%&gt;%
+  left_join(., kc_race_ref, by = c(&quot;RACE&quot;=&quot;race_cd&quot;))%&gt;%
+  filter(RACE != 0)%&gt;%
+  mutate(dt_yr_f = as_factor(rep_yr))%&gt;%
+  group_by(dt_yr_f)%&gt;%
+  mutate(prop_race = value/sum(value, na.rm = T))%&gt;%
+  ungroup()</code></pre>
+</div>
+</div>
+<div id="plot-data" class="section level3">
+<h3>Plot data</h3>
+<p>We can quickly see that King County (of which Seattle is a part of), has a couple of outstanding trends – a highly homogeneous population (predominately White) and large net in-migration growth (hence the city planning).</p>
+<pre class="r"><code># Net Migration 
+
+p_netmig &lt;- kc_component%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = reorder(ts_lab, -PERIOD), y = value), fill = &quot;navy&quot;)+
+  coord_flip()+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  labs(title = &quot;King County Net Migration&quot;, 
+       subtitle = &quot;From 2010 to 2018&quot;, 
+       x = NULL, 
+       y = &quot;Persons&quot;)
+
+# Race proportion distribution. Comparing 2010 to 2018
+
+p_kc_race &lt;- kc_race%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = reorder(race_desc, prop_race), y = prop_race, group = dt_yr_f, fill = dt_yr_f), 
+           position = &quot;dodge&quot;)+
+  coord_flip()+
+  scale_x_discrete(labels = function(x) str_wrap(x, 35))+
+  scale_y_continuous(labels = scales::percent)+
+  scale_fill_manual(&quot;&quot;,values = c(&quot;navy&quot;, &quot;darkred&quot;))+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;)+
+  labs(title = &quot;King County Population by Race (Proportion)&quot;, 
+       subtitle = &quot;Comparing 2018 to 2010 Estimates&quot;, 
+       x = NULL, 
+       y = &quot;Pop % Est.&quot;)
+  
+p_netmig</code></pre>
+<p><img src="/post/2020-01-14-seattle-comprehensive-plan-growth-strategy_files/figure-html/demViz-1.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>p_kc_race</code></pre>
+<p><img src="/post/2020-01-14-seattle-comprehensive-plan-growth-strategy_files/figure-html/demViz-2.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="conclusion-and-next-steps" class="section level3">
+<h3>Conclusion and Next Steps</h3>
+<p>We see there is clearly a looming problem, in a future post we’ll use our combination of tidycensus along with sf (simple features) and leaflet package to recreate some of the maps contained within the updates to track progress of the 2035 plan to date based on the most recent report…</p>
+</div>
