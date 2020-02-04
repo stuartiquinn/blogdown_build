@@ -1,0 +1,396 @@
+---
+title: Seattle Comprehensive Plan - Part III - Progress
+author: ''
+date: '2020-01-26'
+slug: seattle-comprehensive-plan-part-iii-progress
+categories:
+  - Housing
+tags:
+  - R
+  - Seattle
+  - DataViz
+---
+
+
+
+<div id="housing-measures-progress" class="section level3">
+<h3>Housing Measures Progress</h3>
+<p>In our most <a href="https://www.siq-blog.com/2020/01/18/seattle-comprehensive-plan-map-part-ii/" title="Part II Post">recent post</a>, we outlined a few less robust measures to evaluate progress related to the City of Seattle’s comprehensive planning initiative. We outlined three measures we would track over a time series to determine if the outcomes were as expected based on the recommended policy remedies. These measures are not determinant, but simply provide a comparative view of progress on housing within the context of national measures.</p>
+</div>
+<div id="data-sources" class="section level3">
+<h3>Data Sources</h3>
+<p>For this post, we’ll focus on three different measures at different geographic levels to evaluate progress and/or impediments to the comprehensive planning under way.</p>
+<ol style="list-style-type: decimal">
+<li>Monthly Inventory of Homes for Sale by Metropolitan Area</li>
+</ol>
+<ul>
+<li>Zillow Monthly for sale inventory, seasonally adjusted (smoothed)</li>
+<li>Zillow Home Sales (seasonally adjusted) The number of homes sold during the given month</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>Estimated Average Monthly Mortgage Payment</li>
+</ol>
+<ul>
+<li>Freddie Mac Primary Mortgage Market Survey (30-year fixed rate mortgage)</li>
+<li>Zillow Home Value Index (ZHVI)</li>
+</ul>
+<ol start="3" style="list-style-type: decimal">
+<li>U.S. Census and Housing and Urban Development - Gross Rent in Dollars</li>
+</ol>
+<div id="methodology-notes" class="section level4">
+<h4>Methodology Notes</h4>
+<p>Similar to previous posts, I will not detail out the specific methodologies utilized to generate these data. However, further high-level reading can be done at the following sites:</p>
+<ol style="list-style-type: decimal">
+<li><a href="https://www.zillow.com/research/home-sales-methodology-7733/" title="Zillow Home Sales">Zillow home sales</a></li>
+<li><a href="https://www.zillow.com/research/zhvi-methodology-2019-highlights-26221/" title="Zillow HVI, Method Summary">Zillow Home Value Index (ZHVI) - Summary Method</a>, <a href="https://www.zillow.com/research/zhvi-methodology-2019-deep-26226" title="Zillow HVI, Deep Dive">Zillow HVI - Deep Dive</a></li>
+<li><a href="http://www.freddiemac.com/pmms/about-pmms.html" title="Freddie Mac PMMS">Freddie Mac PMMS</a></li>
+</ol>
+<p>In addition, there are a number of “gotchas” when comparing this many data sources, geographies and time intervals. I do not account for a number of these in this particular post given our interest in high-level trending.</p>
+</div>
+</div>
+<div id="load-data-from-sources" class="section level3">
+<h3>Load Data from Sources</h3>
+<p>Similar to other analysis, we will load our data from a variety of sources, compute or aggregated measures and finally plot the data.</p>
+<ol style="list-style-type: decimal">
+<li>For Zillow data we will use the readr package from tidyverse to read .csv directly from the Zillow site</li>
+<li>For National figures including Freddie Mac PMMS, we will utilize the tidyquant package previously discussed</li>
+<li>For our Gross Rental Census figures, we will leverage tidycensus. In addition, we will use the clipping method outlined in the previous post to aggregate up tract level data to city data</li>
+</ol>
+<pre class="r"><code># REFERENCE LINKS
+#-----------------------------------------------------------------------
+# 1. Zillow datasets
+# Zillow RegionID = 395078  Zillow RegionName = Seattle, WA
+
+# 1.1 Homes listed
+z_mo_list_url &lt;- &quot;http://files.zillowstatic.com/research/public/Metro/MonthlyListings_SSA_AllHomes_Metro.csv&quot;
+
+# 1.2. Homes Sold
+z_mo_hsale_url &lt;- &quot;http://files.zillowstatic.com/research/public/Metro/Sale_Counts_Seas_Adj_Msa.csv&quot;
+
+# 1.3. Zillow Home Value Index
+z_hvi_url &lt;- &quot;http://files.zillowstatic.com/research/public/Metro/Metro_Zhvi_AllHomes.csv&quot;
+
+# 2. National Tickers (tidyquant)
+#-------------------------------------------------------------------------
+
+# 2.1. Freddie Mac PMMS - 30 year fixed rate mortgage
+pmms_tks &lt;- &quot;MORTGAGE30US&quot;
+
+# 2.2 Month&#39;s supply of homes for sale
+
+d_natl_supply &lt;- &quot;MSACSR&quot;
+
+# 2.3. National Median Home Price (homes sold)
+natl_hp_tks &lt;- &quot;MSPUS&quot;
+
+
+# 3. Gross Rent Parameters
+#-------------------------------------------------------------------------
+# 3.1. DP04_0134 = Gross Rent
+
+# 3.2. City of Seattle Geography file for clipping tract data 
+sea_url &lt;- &quot;https://opendata.arcgis.com/datasets/d508083ebd7d444b9997639af845937d_1.geojson&quot;
+
+
+## Load Data
+
+z_filter &lt;- &quot;395078&quot;
+
+d_re_supply &lt;- bind_rows(
+  
+  # Monthly Listings
+  
+  read_csv(z_mo_list_url)%&gt;%
+  filter(RegionID == z_filter)%&gt;%
+  rename(region_nm = RegionName)%&gt;%
+  select(-c(SizeRank, RegionID, RegionType, StateName))%&gt;%
+  gather(dt_full, value, -region_nm)%&gt;%
+  mutate(dt_full = ymd(paste0(dt_full, &quot;-01&quot;)), 
+         src_url = z_mo_list_url,
+         src_cite = &quot;Zillow&quot;,
+         metric_nm = &quot;mo_listing_z&quot;,
+         metric_description = &quot;The count of unique listings 
+         that were active at any time in a given month&quot;),
+  
+  # Monthly Home Sales
+  
+  read_csv(z_mo_hsale_url)%&gt;%
+  filter(RegionID == z_filter)%&gt;%
+  rename(region_nm = RegionName)%&gt;%
+  select(-c(SizeRank,RegionID))%&gt;%
+  gather(dt_full, value, -region_nm)%&gt;%
+  mutate(dt_full = ymd(paste0(dt_full, &quot;-01&quot;)), 
+         src_url = z_mo_hsale_url, 
+         src_cite = &quot;Zillow&quot;, 
+         metric_nm = &quot;mo_sales_z&quot;,
+         metric_description = &quot;The number of homes sold during the given month, 
+         seasonally adjusted using the X-12-Arima method.&quot;), 
+)
+
+d_mtg_finance &lt;- bind_rows(
+  
+  # Monthly Zillow-Home-Value-Index Value
+  
+  read_csv(z_hvi_url)%&gt;%
+    filter(RegionID == z_filter)%&gt;%
+    rename(region_nm = RegionName)%&gt;%
+    select(-c(SizeRank,RegionID))%&gt;%
+    gather(dt_full, value, -region_nm)%&gt;%
+    mutate(dt_full = ymd(paste0(dt_full, &quot;-01&quot;)), 
+         src_url = z_hvi_url, 
+         src_cite = &quot;Zillow&quot;, 
+         metric_nm = &quot;mo_price_est_z&quot;,
+         metric_description = &quot; A smoothed, seasonally adjusted measure of the typical home value 
+         and market changes across a given region and housing type&quot;), 
+  
+  # Freddie Mac 30 Year Mortgage Rate from Federal Reserve
+  tq_get(pmms_tks, get = &quot;economic.data&quot;, from = &quot;1970-01-01&quot;)%&gt;%
+    mutate(dt_full = ymd(paste0(str_sub(date, 0, 8), &quot;01&quot;)))%&gt;%
+    group_by(dt_full)%&gt;%
+    summarize(value = mean(price, na.rm = T))%&gt;%
+    ungroup()%&gt;%
+    mutate(region_nm = &quot;National&quot;, 
+         src_url = &quot;https://fred.stlouisfed.org/series/MORTGAGE30US&quot;, 
+         src_cite = &quot;Freddie Mac&quot;, 
+         metric_nm = &quot;avg_frm_30yr&quot;, 
+         metric_description = &quot;Lender survey of average 30 year mortgage rates reported weekly.&quot;)
+
+)
+
+
+d_mo_inventory &lt;- d_re_supply%&gt;%
+  select(dt_full, metric_nm, value)%&gt;%
+  spread(metric_nm, value)%&gt;%
+  na.omit()%&gt;%
+  mutate(mo_inventory_z = round(mo_listing_z / mo_sales_z, 1))
+
+
+d_natl_supply &lt;- tq_get(&quot;MSACSR&quot;, get = &quot;economic.data&quot;, from=&quot;1970-01-01&quot;)%&gt;%
+  rename(dt_full = date, mo_inventory_natl =  price)
+
+d_supply_compare &lt;- d_mo_inventory%&gt;%
+  inner_join(., d_natl_supply, by = &quot;dt_full&quot;)
+
+d_natl_hp &lt;- tq_get(natl_hp_tks, get = &quot;economic.data&quot;, from=&quot;1970-01-01&quot;)%&gt;%
+    rename(dt_full = date, natl_med_price =  price)
+
+
+d_mtg_compare &lt;- d_mtg_finance%&gt;%
+  select(dt_full, metric_nm, value)%&gt;%
+  mutate(dt_full = as.Date(as.yearqtr(dt_full)))%&gt;%
+  group_by(dt_full, metric_nm)%&gt;%
+  summarize(value = mean(value, na.rm = T))%&gt;%
+  ungroup()%&gt;%
+  spread(metric_nm, value)%&gt;%
+  na.omit()%&gt;%
+  inner_join(., d_natl_hp, by = &quot;dt_full&quot;)%&gt;%
+  mutate(avg_pmt_local = (mo_price_est_z*.9)*(avg_frm_30yr/1200)/1-(1 + avg_frm_30yr/1200)^-360, 
+         avg_pmt_natl = (natl_med_price*.9) * (avg_frm_30yr/1200)/1-(1 + avg_frm_30yr/1200)^-360, 
+         zhpi_yoy = round((mo_price_est_z/lag(mo_price_est_z, 4))-1, 2))
+
+d_hpi_natl &lt;- tq_get(&quot;CSUSHPINSA&quot;, get = &quot;economic.data&quot;, from = &quot;1970-01-01&quot;)%&gt;%
+  rename(`CS-National HPI`= price)%&gt;%
+  na.omit()
+
+
+yrs_of_interest &lt;- 2014:2018
+
+d_kc_rent &lt;- yrs_of_interest%&gt;%
+  set_names()%&gt;%
+  map(., ~get_acs(geography = &quot;tract&quot;, variables = c(&quot;median_gross_rent&quot; = &quot;DP04_0134&quot;), 
+                     state = &quot;WA&quot;, county = &quot;King&quot;, cache_table = T, year = .x, geometry = T, 
+                     survey = &quot;acs5&quot;), .id = &quot;dt_yr&quot;)%&gt;%
+  map2(., names(.), ~mutate(.x, dt_yr = .y))%&gt;%
+  do.call(&quot;rbind&quot;, .)%&gt;%
+  select(dt_yr, NAME, variable, estimate)%&gt;%
+  separate(NAME, sep = &quot;,&quot;, into = c(&quot;tract_no&quot;, &quot;cnty_nm&quot;, &quot;state&quot;))%&gt;%
+  mutate(tract_no = str_replace(tract_no, pattern = &quot;Census&quot;, &quot;&quot;), 
+         cnty_nm = str_replace(cnty_nm, pattern = &quot;County&quot;, &quot;&quot;))%&gt;%
+  unite(geo_nm, sep = &quot;-&quot;, c(&quot;cnty_nm&quot;, &quot;tract_no&quot;))%&gt;%
+  select(dt_yr, geo_nm, estimate)%&gt;%
+  group_by(dt_yr)%&gt;%
+  mutate(median_val = median(estimate, na.rm = T))%&gt;%
+  ungroup()
+
+
+d_sea_muni &lt;- geojson_sf(sea_url)%&gt;%
+  filter(., CITYNAME == &quot;Seattle&quot;)%&gt;%
+  st_transform(., st_crs(d_kc_rent))
+
+
+d_idx &lt;- st_within(d_kc_rent, d_sea_muni)
+
+d_sea_rent &lt;- f_tract_within_idx(d_kc_rent, d_idx)%&gt;%
+  group_by(dt_yr)%&gt;%
+  mutate(median_val = median(estimate, na.rm = T))%&gt;%
+  ungroup()</code></pre>
+</div>
+<div id="plot-data" class="section level3">
+<h3>Plot Data</h3>
+<div id="inventory-of-homes-for-sale-in-months" class="section level4">
+<h4>Inventory of Homes for Sale in Months</h4>
+<p><strong>About the measure:</strong> This is a common supply side measure used to evaluate the temperature of a real estate market for existing or new home purchasers and sellers. The measure output can be understood as: given the current number of home sales, how many months would it take to sell all of the properties listed (i.e. how much housing stock is available to choose from for prospective buyers).</p>
+<p><strong>Impact of measure:</strong> Month’s of inventory can be distilled down into two specific output categories based on whether there is a glut of supply (excess supply, relative to demand) or a dearth (scarcity of supply, relative to demand). The measure is generally interpreted within the context of it’s relationship to: (i) existing and future home prices; (ii) length of time a listing is available on the market and (iii) whether the actual sales price is below, equal to or above the listed price.</p>
+<ol start="0" style="list-style-type: decimal">
+<li><p>Equilibrium (supply=demand): The general industry rule of thumb based on historic data indicate that a measure of 4.5 - 5.5 months is indicative of a housing market in equilibrium. Said simply, when the inventory is at that level – we do not expect to see upward or downward pressure on home prices, relative to their long-term fundamentals.</p></li>
+<li><p>Sellers Market (supply &lt; demand): If the month of inventory is below our equilibrium value, we call this a sellers market. The market is termed as such because the lack of available homes for sale puts upward pressure on home prices indicating the higher likelihood that sellers will receive their actual or above listing price.</p></li>
+<li><p>Buyers Market (supply &gt; demand): Conversely, when there are more available homes than buyers (e.g. first time home buyers), those seeking to buy are benefited because they have more options available and thus more bargaining power.</p></li>
+</ol>
+<pre class="r"><code>d_supply_compare%&gt;%
+  select(dt_full, contains(&quot;inventory&quot;))%&gt;%
+  rename(`Seattle Monthly Inventory` = mo_inventory_z, 
+         `National Monthly Inventory` = mo_inventory_natl)%&gt;%
+  gather(variable, value, -&quot;dt_full&quot;)%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = dt_full, y = value, group = variable, fill = variable), 
+           position = &quot;dodge&quot;)+
+  geom_hline(yintercept = 5.5, linetype = 2, color = &quot;darkred&quot;)+
+  scale_fill_viridis_d(&quot;&quot;)+
+  scale_x_date(date_breaks = &quot;6 months&quot;, date_labels = &quot;%Y-%B&quot;)+
+  theme_minimal()+
+  labs(title = &quot;Comparing National v. Seattle by Month&#39;s Supply of Housing&quot;, 
+       subtitle = NULL, 
+       x = NULL, 
+       y = &quot;# of Months&quot;, 
+       caption = &quot;Zillow, U.S. Census, Housing and Urban Development&quot;)+
+  theme(legend.position = &quot;top&quot;, 
+        axis.text.x = element_text(angle = 90))</code></pre>
+<p><img src="/post/2020-01-26-seattle-comprehensive-plan-part-iii-progress_files/figure-html/p1Inventory-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="average-monthly-mortgage-payment" class="section level4">
+<h4>Average Monthly Mortgage Payment</h4>
+<p><strong>About the measure:</strong> Average monthly mortgage payment is utilized for understanding what the estimated monthly housing payment expense would be for a household by utilizing: (i) current average rates (national) and (ii) the current median home price value (by locale). The two largest components of mortgage payments are principal and interest (P+I). There are additional monthly recurring costs such as insurance and taxes, which we will not include here.</p>
+<p><strong>Impact of measure:</strong> Each of the two inputs has the potential to increase or decrease the average monthly mortgage. Mortgage rates are set by the lending institution based on a multitude of factors and median home prices are driven by supply and demand components. Given the proportion of monthly expense usually associated with shelter (either monthly mortgage or rent), this metric provides a good read on how expensive housing is within a geography. For now we will just evaluate the raw figures, but in future posts we may further unpack some of these concepts. Specifically, what monthly housing expense means relative to wage and income for an area.</p>
+<p><strong>Note on assumptions:</strong> For our payment calculation, there are a few sets of assumptions beyond the earlier mention that this is not an “all-in” payment amount. In general, the output from our calculations can be presumed to be lower (or more conservative), than the actual monthly mortgage obligation.
+1. We assume a 10% upfront down payment. Despite the anecdote that you should have 20%, that is not and has not been a reality for quite some time. According to the National Association of Realtors (NAR) <a href="https://www.nar.realtor/sites/default/files/documents/2019-12-realtors-confidence-index-01-22-2020.pdf#page=5" title="NAR Down Payment">most recent survy</a> estimated that 76% of new home buyers put down less than 20%, while 56% of existing home buyers put down less than 20. Zillow has produced similar <a href="https://wp-tid.zillowstatic.com/50/CHTR2019_Buyers_webFINAL-ef2665.pdf#page=2" title="Zillow Down Payment">survey figures as well</a>.</p>
+<pre class="r"><code>d_mtg_compare%&gt;%
+  select(dt_full, contains(&quot;avg_pmt&quot;))%&gt;%
+  rename(`Avg. Pmt Seattle` = avg_pmt_local, `Avg. Pmt National` = avg_pmt_natl)%&gt;%
+  gather(variable, value, -&quot;dt_full&quot;)%&gt;%
+  mutate(dt_yr = as.character(year(dt_full)))%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = dt_full, y = value, fill = variable, group = variable), 
+           position = &quot;dodge&quot;)+
+  scale_y_continuous(labels = dollar)+
+  scale_x_date(date_breaks = &quot;9 months&quot;)+
+  scale_fill_viridis_d(&quot;&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;top&quot;, 
+        axis.text.x = element_text(angle = 90))</code></pre>
+<p><img src="/post/2020-01-26-seattle-comprehensive-plan-part-iii-progress_files/figure-html/p2AmPmt-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="median-gross-rent-tract-aggregated-to-county-and-city-boundaries" class="section level4">
+<h4>Median Gross Rent (tract aggregated to county and city boundaries)</h4>
+<p><strong>About the measure:</strong> The Census conducts frequent surveys in order to evaluate households and individuals on an interim basis between decennial Census surveys. For this post, we’ll evaluate gross rents, which combines contract rent (monthly rental expense) and average utilities.</p>
+<p><strong>Impact of measure:</strong> The previous measures are specific to affordability with respect to existing or prospective homeowners, while median gross rent provides additional details into the monthly housing burden for households renting.</p>
+<pre class="r"><code># Distribution of Gross Rent by Tracts within King county
+ggplot(d_kc_rent, aes(estimate))+
+  geom_histogram(fill = &quot;navy&quot;, bins = 60, color = &quot;white&quot;)+
+  scale_x_continuous(labels = scales::dollar, breaks = seq(0, 3750,375))+
+  facet_wrap(~dt_yr, ncol = 1)+
+  theme_minimal()+
+  geom_vline(aes(xintercept = median_val, group = dt_yr), lty = &quot;dashed&quot;, size = 1, 
+             color = &quot;darkgreen&quot;)+
+  geom_text(aes(label = paste0(&quot;Median Value: $&quot;, prettyNum(median_val, big.mark = &quot;,&quot;)), 
+            x = median_val+1000, y = 20))+
+  labs(title = &quot;King County gross rent by tract&quot;, 
+       subtitle = &quot;Comparing 2014 to 2018&quot;,
+       x = &quot;Monthly Gross Rent ($s)&quot;,
+       y = &quot;Tract Cnt&quot;,
+       caption = &quot;ACS-5yr Survey, U.S. Census&quot;)</code></pre>
+<p><img src="/post/2020-01-26-seattle-comprehensive-plan-part-iii-progress_files/figure-html/p3RentPlots-1.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code># Distribution of Gross Rent by Tracts within Seattle
+
+ggplot(d_sea_rent, aes(estimate))+
+  geom_histogram(fill = &quot;navy&quot;, bins = 60, color = &quot;white&quot;)+
+  scale_x_continuous(labels = scales::dollar, breaks = seq(0, 3750,375))+
+  facet_wrap(~dt_yr, ncol = 1)+
+  theme_minimal()+
+  geom_vline(aes(xintercept = median_val, group = dt_yr), lty = &quot;dashed&quot;, size = 1, 
+             color = &quot;darkgreen&quot;)+
+  geom_text(aes(label = paste0(&quot;Median Value: $&quot;, prettyNum(median_val, big.mark = &quot;,&quot;)), 
+                x = median_val+1000, y = 10))+
+  labs(title = &quot;Seattle gross rent by tract&quot;, 
+       subtitle = &quot;Comparing 2014 to 2018&quot;,
+       x = &quot;Monthly Gross Rent ($s)&quot;,
+       y = &quot;Tract Cnt&quot;,
+       caption = &quot;ACS-5yr Survey, U.S. Census&quot;)</code></pre>
+<p><img src="/post/2020-01-26-seattle-comprehensive-plan-part-iii-progress_files/figure-html/p3RentPlots-2.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="a-map-for-fun" class="section level4">
+<h4>A map for fun…</h4>
+<pre class="r"><code># Map Tract Data For Seattle
+
+# Create Clean Theme For Map
+theme_map_sq &lt;- function(...){
+  theme_minimal()+
+    theme(
+      text = element_text(family = &quot;Arial Narrow&quot;, color = &quot;#22211d&quot;),
+      axis.line = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      # panel.grid.minor = element_line(color = &quot;#ebebe5&quot;, size = 0.2),
+      panel.grid.major = element_line(color = &quot;#ebebe5&quot;, size = 0.2),
+      panel.grid.minor = element_blank(),
+      plot.background = element_rect(fill = &quot;#f5f5f2&quot;, color = NA), 
+      panel.background = element_rect(fill = &quot;#f5f5f2&quot;, color = NA), 
+      legend.background = element_rect(fill = &quot;#f5f5f2&quot;, color = NA),
+      panel.border = element_blank(),
+      legend.title.align = 0.5, 
+      legend.position = c(0.5, -0.07),
+      legend.box.background = element_rect(fill = NA, color = NA),
+      legend.key = element_rect(color = &quot;transparent&quot;, fill = &quot;white&quot;),
+      ...
+    )
+}
+
+# Set Break Length for Clean Categories
+brk_length &lt;- 7
+
+# Create Clean Labels Based on Breaks and Build Map Faceted by ACS Survey Year
+d_sea_rent%&gt;%
+  mutate(brk_value = cut(estimate, pretty(d_sea_rent$estimate, n = brk_length),
+                         dig.lab = 4))%&gt;%
+  separate(brk_value, sep=&quot;,&quot;, into = c(&quot;from&quot;, &quot;to&quot;), remove = F)%&gt;%
+  mutate_at(c(&quot;from&quot;, &quot;to&quot;), 
+            ~str_replace_all(., pattern = &quot;[^[:alnum:]]&quot;, &quot;&quot;)%&gt;%as.numeric())%&gt;%
+  mutate_at(c(&quot;from&quot;,&quot;to&quot;), ~case_when(
+    . &gt; 999 ~ paste0(as.character(./1000), &quot;K&quot;), 
+    . &lt; 1000 ~ as.character(.)))%&gt;%
+  unite(&quot;brk_val_lab&quot;, from,to, sep = &quot; to &quot;)%&gt;%
+  mutate(brk_val_lab = factor(brk_val_lab, 
+                              levels = c(&quot;0 to 500&quot;, &quot;500 to 1K&quot;, 
+                                         &quot;1K to 1.5K&quot;,&quot;1.5K to 2K&quot;, 
+                                         &quot;2K to 2.5K&quot;, &quot;2.5K to 3K&quot;, 
+                                         &quot;3K to 3.5K&quot;,&quot;3.5K to 4K&quot;)))%&gt;%
+  ggplot()+
+  geom_sf(aes(fill = brk_val_lab), color = &quot;white&quot;)+
+  theme_map_sq()+
+  theme(legend.position = &quot;bottom&quot;)+
+  scale_fill_manual(
+    values = viridis(8, alpha = 0.9), 
+    na.value = &quot;grey60&quot;,
+    name = &quot;Gross Rent ($)&quot;,
+    guide = guide_legend(
+      direction = &quot;horizontal&quot;,
+      keywidth = unit(1.75, &quot;cm&quot;),
+      nrow = 1, 
+      byrow = T,
+      title.position = &quot;top&quot;, 
+      label.position = &quot;bottom&quot;, 
+      title.hjust = 0.5))+
+  facet_wrap(~dt_yr, nrow = 1)</code></pre>
+<p><img src="/post/2020-01-26-seattle-comprehensive-plan-part-iii-progress_files/figure-html/p4RentMaps-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="observations-and-conclusions" class="section level4">
+<h4>Observations and Conclusions</h4>
+<ul>
+<li>For the city of Seattle and surrounding areas inventory of homes for sale remains low. Assuming demand remains consistent, we would continue to see minor upward pressure on home prices though there could be leveling off after a long period of it being a “sellers” market. Based on the plot, it appears we would expect to see nationwide home price appreciation begin to move toward the long-term range – moderating from sizeable increases</li>
+<li>Monthly mortgage payments are expensive relative to what is paid nationally. Seattle (and the rest of the nation) has largely benefited from historic lows in interest rates. Despite this trend in interest rates, home sale values still make Seattle an expensive city</li>
+<li>Rents have continued to increase over time - particularly from 2014 - 2015, where King County saw median rents nearly double. This trend moderated over time, particularly within Seattle – though these monthly costs continued to expanded outward spreading the cost more broadly to periphery tracts/neighborhoods.</li>
+</ul>
+</div>
+</div>

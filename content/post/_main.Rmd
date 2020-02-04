@@ -1,0 +1,2142 @@
+---
+title: Buffett Indicator - Stock Valuations
+author: Stuart I. Quinn
+date: '2018-11-23'
+slug: buffett-indicator-stock-valuations
+categories: []
+tags: []
+---
+
+One of the may indicators for increasing stock valuations beyond their norm is the so-called "Buffett Indicator." The measure and namesake is derived from none-other than the Omaha Oracle, Warren Buffett. Mr. Buffett has a long history of value investing through his firm Berkshire Hathaway.
+
+In order to evaluate discounts or deals within the market, a generalized measure was created to evaluate how 'expensive' the current marketplace is relative to the total aggregate production measure by U.S. Gross Domestic Product (GDP). 
+
+```{r admin, eval = T, message = F, warning = F, echo = T}
+
+options(stringsAsFactors = F)
+setwd(paste0(Sys.getenv("HOME"), "/R/2018/Buffet-Indicator"))
+
+pks <- c("reshape2", "tidyverse", "tidyquant", 
+         "lubridate", "ggplot2", "scales", "viridis")
+invisible(lapply(pks, require, character.only = T))
+
+tickers <- c("WILL5000PRFC", "GDP", "NCBEILQ027S")
+
+d_recessions <- read.table(textConnection(
+  "Peak, Trough
+  1857-06-01, 1858-12-01
+  1860-10-01, 1861-06-01
+  1865-04-01, 1867-12-01
+  1869-06-01, 1870-12-01
+  1873-10-01, 1879-03-01
+  1882-03-01, 1885-05-01
+  1887-03-01, 1888-04-01
+  1890-07-01, 1891-05-01
+  1893-01-01, 1894-06-01
+  1895-12-01, 1897-06-01
+  1899-06-01, 1900-12-01
+  1902-09-01, 1904-08-01
+  1907-05-01, 1908-06-01
+  1910-01-01, 1912-01-01
+  1913-01-01, 1914-12-01
+  1918-08-01, 1919-03-01
+  1920-01-01, 1921-07-01
+  1923-05-01, 1924-07-01
+  1926-10-01, 1927-11-01
+  1929-08-01, 1933-03-01
+  1937-05-01, 1938-06-01
+  1945-02-01, 1945-10-01
+  1948-11-01, 1949-10-01
+  1953-07-01, 1954-05-01
+  1957-08-01, 1958-04-01
+  1960-04-01, 1961-02-01
+  1969-12-01, 1970-11-01
+  1973-11-01, 1975-03-01
+  1980-01-01, 1980-07-01
+  1981-07-01, 1982-11-01
+  1990-07-01, 1991-03-01
+  2001-03-01, 2001-11-01
+  2007-12-01, 2009-06-01"), sep=',',
+  colClasses=c('Date', 'Date'), header=TRUE)
+
+
+
+```
+
+```{r getData, echo = T, eval = T, message = F, warning = F}
+d_stock <- tq_get(x = tickers[1], get = "economic.data", from="1971-01-01")%>%
+  na.omit()%>%
+  mutate(report_freq = ifelse(date < 1979-12-01, "monthly", "daily"), 
+         qtr_dt = as.yearqtr(date, "%Y-%m-%d"))%>%
+  group_by(qtr_dt)%>%
+  summarise(qtr_value_willshire = mean(price))%>%
+  ungroup()
+
+
+d_gdp <- tq_get(x = tickers[2], get = "economic.data", from="1971-01-01")%>%
+  mutate(qtr_dt = as.yearqtr(date, "%Y-%m-%d"))%>%
+  group_by(qtr_dt)%>%
+  summarise(qtr_value_gdp = mean(price))%>%
+  ungroup()
+
+d_fed_assets <- tq_get(x = tickers[3], get="economic.data", from="1971-01-01")%>%
+  mutate(qtr_dt = as.yearqtr(date, "%Y-%m-%d"))%>%
+  group_by(qtr_dt)%>%
+  summarise(qtr_value_z1 = mean(price)/10^3)%>%
+  ungroup()
+
+
+d_full <- d_gdp%>%
+  inner_join(., d_stock, by=c("qtr_dt"="qtr_dt"))%>%
+  inner_join(., d_fed_assets, by = c("qtr_dt"="qtr_dt"))%>%
+  mutate(willshire_val_ratio = qtr_value_willshire/qtr_value_gdp, 
+         z1_val_ratio = qtr_value_z1/qtr_value_gdp)
+p1_recession <- subset(d_recessions, Peak >= min(d_full$qtr_dt))
+
+```
+
+```{r plotViz, echo = T, eval = T, warning = F, message = F, fig.align = "center"}
+d_p1 <- d_full%>%
+  select(qtr_dt, contains("ratio"))%>%
+  melt(., id.vars = "qtr_dt")
+
+
+p1 <- ggplot(d_p1)+
+  geom_line(aes(x = qtr_dt, y = value, color = variable), size = 1.25)+
+  scale_x_yearqtr()+
+  scale_y_continuous(labels=percent)+
+  scale_color_viridis_d(labels = c("Wilshire/GDP", "Non-Financial Corp Liabilities/GDP"))+
+  geom_line(aes(x = qtr_dt, y = mean(value)), linetype = 2, color = "red")+
+  geom_smooth(aes(x = qtr_dt, y = value), method = "auto", formula = y~x)+
+  geom_rect(data = p1_recession, aes(xmin = as.yearqtr(Peak), 
+                                     xmax = as.yearqtr(Trough), ymin = -Inf, ymax = +Inf),
+            fill = 'dodgerblue1', alpha = 0.3)+
+  labs(title = "Buffet Indicator Ratio", 
+       x = NULL, 
+       y = "Ratio of the: Willshire 5000 / GDP", 
+       caption = "NBER, Federal Reserve, St. Louis, Tables: WILL5000PRFC, GDP, NCBEILQ027S")+
+  theme_minimal()+
+  theme(legend.position = "top", 
+        legend.title = element_blank())
+p1
+
+
+
+```
+
+<!--chapter:end:2018-11-23-buffett-indicator-stock-valuations.Rmd-->
+
+---
+title: FHA Originations - As of Aug 2018
+author: Stuart I. Quinn
+date: '2018-11-23'
+slug: fha-originations-as-of-aug-2018
+categories: []
+tags: []
+---
+
+The Federal Housing Administration is an agency within HUD that provides a federal guarantee (endorsement), for loans originated in the primary marketplace. Each month, the agency publishes a [monthly snapshot][1], for purposes of demonstrating the lenders, mortgage type, geography and financing terms for mortgages it ensures. 
+
+For purposes of this exercise, all of the data has already been downloaded locally, transformed and saved for purposes of loading directly into R for visualization. A detailed file of that process can be found [here][2]. 
+
+```{r echo = T, eval = T, warning = F, message = F}
+
+options(stringsAsFactors = F, scipen = 99)
+
+# List packages used
+pks <- c("rvest", "ggplot2", "purrr", "tidyverse", "tidycensus",
+         "stringr", "lubridate", "fs", "knitr", "xlsx", "readxl", "scales")
+
+# Load packages used
+invisible(lapply(pks, require, character.only = T))
+
+##################################################
+# NOTE                                          #
+# This will need to be updated by the user      #
+# depending on where the data they dl is stored #
+##################################################
+
+main_dir <- paste0(path_home_r(), "/R/2018/FHA-Orig/")
+data_dir <- paste0(main_dir, "data/")
+
+
+```
+
+## Read-in Data that Has Already Been Downloaded
+
+We will use the function created above to download the single .csv file stored locally containing all of the data produced by FHA from January 18 - August 18. 
+
+```{r loadData, echo = T, eval = T, warning = F, message = F}
+
+
+fha_ref_url <- "https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/ref_file/1_ref_var_definitions.csv"
+d_ref_col_nms <- read_csv(fha_ref_url)
+
+fname <- dir_ls(main_dir, regexp = "FHA-Orig-2018")
+
+d_full <- read.csv(fname, header = T)
+
+# Set colnames with the reference file
+colnames(d_full) <- d_ref_col_nms$var_name
+
+d_full <- d_full%>%
+  arrange(dt_yr_endorse, dt_mo_endorse)
+
+
+
+```
+
+
+```{r plotViz, echo = T, eval = T,  message = F, warning = F, fig.align = "center"}
+
+ggplot(d_full, aes(x = dt_mo_endorse, fill = loan_purpose, group = loan_purpose))+
+  geom_bar(stat = "count")+
+  scale_fill_manual(values = c("darkred", "navy", "dodgerblue2"), "Loan Purpose")+
+  scale_y_continuous(label = comma)+
+  scale_x_continuous(breaks = c(seq(min(d_full$dt_mo_endorse), max(d_full$dt_mo_endorse), 1)),
+                 label = function(x) paste0("MO-", x))+
+  labs(title = "FHA Portfolio Snapshot",
+       subtitle = paste0("Data through: ", month.abb[max(d_full$dt_mo_endorse)],
+                         "-", max(d_full$dt_yr_endorse)),
+       caption = "HUD/FHA",
+       x = NULL,
+       y = "Count Originated")+
+  theme_minimal()+
+  theme(legend.position = "top")
+
+```
+
+[1]: https://www.hud.gov/program_offices/housing/rmra/oe/rpts/sfsnap/sfsnap
+[2]: https://raw.githubusercontent.com/stuartiquinn/datasets/master/fha_originations/1.1_fha_dl_write_monthly_snapshot.R
+
+<!--chapter:end:2018-11-23-fha-originations-as-of-aug-2018.Rmd-->
+
+---
+title: Freddie Mac Quarterly Re-Fi
+author: Stuart I. Quinn
+date: '2018-11-23'
+slug: freddie-mac-quarterly-re-fi
+categories: []
+tags: []
+---
+
+```{r genAdmin, echo = T, eval = T, warning = F, message = F}
+
+options(stringsAsFactors = F, scipen = 99)
+
+pks <- c("ggplot2", "scales", "tidyverse", "stringr", "readxl", "lubridate")
+invisible(lapply(pks, require, character.only = T))
+
+```
+
+## Mortgage Statistics on Refinance Volume
+
+This is a short post on gathering data from Freddie Mac based on their quarterly data published by Freddie Mac on volume of refinance transactions by refinance type. 
+
+Additional information about the institution and this particular dataset can be found on the company's site (here)[1]. 
+
+>The quarterly refinance statistics analysis uses a sample of properties where Freddie Mac has funded two successive conventional, first-mortgage loans, and the latest loan is for refinance rather than for purchase. The analysis does not track the use of funds made available from these refinances. The analysis also does not track loans paid off in entirety, with no new loan placed. Some loan products, such as 1-year adjustable-rate mortgages (ARMs) and balloons, are based on a small number of transactions.
+
+Once we have the url of the most recently published dataset, we can generate a function to download the file and load it into R for visualization. 
+
+
+## Create the Function & Set the URL for the Data
+
+You can also embed plots, for example:
+
+```{r setFunction, echo=T, eval = T, warning = F, message = F}
+
+
+fre_refi_url <- "http://www.freddiemac.com/research/docs/q3_refinance_2018.xls"
+
+
+# Function:
+get_fre_qtr_refi <- function(fre_refi_url){
+  
+  fre_col_nms <- c("dt_qtr_yr", "cash_out_pct", "no_chng_pct", "lower_loan_amt_pct", 
+                   "median_ratio_new_old", "median_age_refi", "median_hpa_refi", 
+                   "dt_qtr_yr2")
+  if(missing(fre_refi_url)){
+    base_fre_refi_url <- "http://www.freddiemac.com/research/datasets/refinance-stats/"
+    paste0("Find the most recent dataset here: ", base_fre_refi_url)
+  }else{
+    
+    tf <- tempfile()
+    download.file(fre_refi_url, tf, mode = "wb")
+    file.rename(tf, paste0(tf, ".xls"))
+    
+    d_fre <- read_excel(paste0(tf, ".xls"), skip = 5, sheet = 1)%>%
+      select(-contains("X_"))%>%
+      setNames(., fre_col_nms)%>%
+      na.omit()
+    
+    st_dt_yr <- str_sub(d_fre$dt_qtr_yr, 0, 4)%>%head(.,1)%>%as.numeric()
+    st_dt_qtr <- str_sub(d_fre$dt_qtr_yr, -2)%>%
+      head(.,1)%>%
+      as.numeric()%>%
+      ifelse(. == 1, ., (.*3)+1)
+    
+    end_dt_yr <- str_sub(d_fre$dt_qtr_yr, 0, 4)%>%tail(.,1)%>%as.numeric()
+    end_dt_qtr <- str_sub(d_fre$dt_qtr_yr, -2)%>%
+      tail(.,1)%>%
+      as.numeric()%>%
+      ifelse(. == 1, ., (.*3)+1)
+    
+    seq_dt <- seq(ymd(paste(st_dt_yr, st_dt_qtr, "01", collapse = "-")), 
+                  ymd(paste(end_dt_yr, end_dt_qtr, "01", collapse = "-")), 
+                  by = "quarter")%>%
+      tail(., -1)
+    
+    d_fre <- d_fre%>%
+      mutate(dt_full = seq_dt)
+  }
+  unlink(tf)
+  return(d_fre)
+}
+
+
+
+```
+
+
+## Get Data Loaded and Make Transformations
+
+Now that we have our function and url, lets: 
+* Download the data with our function
+* The function also loads the data, removing unecessary columns
+* In addition, we setup our dates to be cleaner full dates (i.e. ymd)
+* Finally, we take some extra steps to setup a new "long" dataset for plotting
+  + This requires us to gather the data
+  + Create a refinance type factor variable that is ordered for plotting
+
+
+```{r getData, echo=T, eval = T, warning = F, message = F}
+
+d_refi <- get_fre_qtr_refi(fre_refi_url)
+
+d_refi_long <- d_refi%>%
+  select(dt_full, contains("pct"))%>%
+  gather(refi_type, value, -dt_full)%>%
+  mutate(refi_type_f = factor(refi_type, levels = rev(c("cash_out_pct","lower_loan_amt_pct", "no_chng_pct")), 
+                              labels = rev(c("Cash-Out", "Lower Loan Amount", "No Change")), ordered = T))
+
+```
+
+## Plot Data
+
+Next we will make a quick plot with ggplot2 to see how the proportion of refinance types has changed over time. 
+
+```{r plotData, echo=T, eval = T, warning = F, message = F, fig.align= 'center'}
+
+ggplot(data = d_refi_long)+
+  geom_area(aes(x = dt_full, y = value, fill = refi_type_f))+
+  scale_y_continuous(label = percent)+
+  scale_fill_manual(values = alpha(c("navyblue", "darkorange1", "seagreen"), 0.85), NULL)+
+  labs(title = "Quarterly Refinance by Type", 
+       subtitle = "Freddie Mac Re-Fi's Only", 
+       x = NULL, 
+       y = "Percent Type (%)", 
+       caption = "Source: Freddie Mac")+
+  theme_minimal()+
+  theme(legend.position = "top")
+  
+
+```
+
+
+## Notes & Plot Save
+If we wanted to write the markdown file, html or save the plot we could do the following
+
+```{r notesAdd, echo = T, eval = T, warning = F, message = F}
+
+# ggsave(filename = "Name-your-file.png", height = 7, width = 9, bg = "transparent")
+
+
+```
+
+
+[1]:"http://www.freddiemac.com/research/datasets/refinance-stats/"
+
+<!--chapter:end:2018-11-23-freddie-mac-quarterly-re-fi.Rmd-->
+
+---
+title: 'Visualizing the Homeownership Rate in the U.S. '
+author: Stuart I. Quinn
+date: '2018-11-24'
+slug: visualizing-the-homeownership-rate-in-the-u-s
+categories:
+  - R
+  - Housing
+tags:
+  - Housing
+  - R
+  - Purrr
+  - DataViz
+---
+
+
+## Summary Background (About the Data)
+The homeownership rate within the U.S. is a metric closely followed by industry professionals and economists as an indicator of robustness of the housing sector. The U.S. Census Bureau produces a number of survey instruments in an attempt to better understand demographic, population, social and economic trends over long periods of time. The most well known survey is the decennial Census, but the Bureau produces a number of more frequent estimates and adjustments throughout the year since the currency of 10-year data is not always helpful in gathering a current snapshot. 
+
+There are a number of different surveys used by economists to evaluate the number of households, tenure choice, occupancy and housing characteristics. Each of these surveys differ in method/design. Despite ongoing debates as to the [accuracy and discrepencies between these surveys][1], more data to allow for these debates is better than none whatsoever. For this analysis we will be using one of the most commonly media cited measures, the Current Population Survey/Housing Vacancies and Homeownership (or the CPS/HVS). 
+
+[Per the U.S. Census Bureau:][2]
+
+> The Housing Vacancies and Homeownership provides current information on the rental and homeowner vacancy rates, and characteristics of units available for occupancy. These data are used extensively by public and private sector organizations to evaluate the need for new housing programs and initiatives. In addition, the rental vacancy rate is a component of the index of leading economic indicators and is thereby used by the Federal Government and economic forecasters to gauge the current economic climate.
+
+For this analysis, we will use the most recently published data reported in Q3-2018.
+
+* [Census Historical HVS Data Site][2]
+* [Table 19 - Quarterly Homeownership Rates by Age of Householder][3]
+  + Note the above link is a direct download of the Excel file
+
+For readers attempting to reproduce this analysis, it will be assumed that you have already downloaded the file, cleaned it up (removed revisions/created full dates) and pointed your working directory to the file. A custom function I have written to expedite this process with R can be found [here][4].
+**Note that the working directory and the target download url may need to be updated for your own specific flow prior to execution of the script.**
+
+```{r adminSetup, echo = T, eval = T, message = F, warning = F, highlight = T}
+# rm(list = ls())
+# Optional - don't treat strings as factors, 
+# no scientific notation for large #'s
+options(stringsAsFactors = F, scipen = 99)
+
+# Required Packages - install if necessary
+# UPDATE TO INSTALL IF DON'T EXISt
+pks <- c("ggplot2", "stringr", "tidyverse", "knitr",
+         "lubridate", "fs", "purrr", "scales", "tidyr",
+         "gridExtra", "grid", "kableExtra", "printr")
+
+invisible(lapply(pks, require, character.only = T))
+
+
+# Name of the file for reading in
+fname <- "2018-10-30-HVS-Homeownership-Q32018.csv"
+
+```
+
+## Load Data and Inspect Column Headers
+
+Upon loading the data, we can quickly inspect the most recent readings from Q3-2018. The column headers below are as follows:
+
+* full_dt = The quarter reported expressed as a full date
+* variable = The Age of Householder cohort 
+* value = The percent of homeownership for the cohort
+* ma_ann_right = The 4 quarter (annual) moving average of the homeownership rate (right weighted) for each cohort
+
+
+```{r loadData, echo = T, eval = T, message = F, warning=F, include = T, highlight=T, fig.align = "center"}
+
+# https://blogdown-demo.rbind.io/2018/02/27/r-file-paths/
+# For reading in data with blogdown
+
+d <- read_csv(paste0("../../static/data/",fname), col_names = T)%>%
+  select(full_dt, variable, value, ma_ann_right)
+
+# Get the most recent Homeownership Rate 
+# by Age of Householder
+# We will use this for adding points 
+# to our plots in the next section
+d_points <- group_by(d, variable)%>%
+  slice(which.max(full_dt))
+
+d_points%>%
+  kable(., format = "html", align = "c")%>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = T, position = "center")
+
+```
+
+
+## Plot the Data
+
+In general, we would expect to see the highest levels of homeownership for the elderly age cohorts, which is reflected in the plots below. However, the primary cohort of interest for most market observers is the Under 35 age cohort for a couple of reasons
+
+* They represent the most populous age cohort
+* Most elder cohorts represent "step-up" home purchases, not a substantial contributor to increases in the rate (i.e. net new homeowners)
+* Historically, the average age for consumers purchasing their first home is 27 (i.e. moving from renters to homeowners)
+* Their behavior and desire for homeownership has been debated given the financial crisis, stagnant wages and high home prices (reduced affordability) in urban areas
+
+This should be viewed as a positive sign. Despite the expected downward trajectory resulting from the 2007 housing crisis, the rate has recently bottomed and is now moving upward nationally. By plotting can see this ascension at the national level has.
+
+#### Note About the Code
+
+There are a number of ways to make plots within R. The most flexible and seemingly widely used package is ggplot2. The plots we will create below use a combination of graphical packages, which include: ggplot2, grid and gridExtra. An alternative and more streamlined approach to the code below would be using ggplot::facet_wrap or ggplot:facet_grid. However, the method taken below allows for us more flexibility when saving the plots -- providing the ability to save each Age Cohort graph in idually. 
+
+The steps we take below, generate six in idual plots grouped by age cohort (variable) as nested lists in a single column of a data frame. For a more detailed explanation of how the purrr and tidyr make this possible, please refer to Bruno Rodrigues' more detailed [post on the topic][5]. 
+
+In short, we are grouping and nesting all of the data by age cohort and then we are using purrr:map2 to pass the data (data = .x) and the age cohort (variable = .y) to appropriately title of each of the plots. The color used for each line is taken from the col_ref variable we defined within the first chunk of this post.
+
+One criticism of this graph, is that we are seemingly comparing a number of groupings whose graphs have different y-scaling which could be misleading. 
+
+
+```{r plotViz, echo = T, eval = T, warning = F, message = F, fig.align = "center", fig.height= 7, fig.width= 11, tidy = T, highlight = T}
+
+# Colors used for ggplot2 below, Optional - Adjust as desired
+col_ref <- c("#26828EFF", "#FDE725FF", "#440154FF")
+
+# Creates the dataframe with a nested 
+# column containing each of the plots by Age Cohort
+
+p_all <- d%>%
+  group_by(variable)%>%
+  nest()%>%
+  mutate(plots_by_cohort = map2(data, variable, ~ggplot(data = .x)+
+                           geom_line(aes(x = full_dt, y = value), 
+                                     size = 1.25, color = col_ref[3])+
+                           geom_line(aes(x = full_dt, y = ma_ann_right), 
+                                     size = 1, color = col_ref[2])+
+                           scale_x_date(labels = date_format("%Y-%m"), 
+                                        breaks = date_breaks("36 months"))+
+                           theme_minimal()+
+                             theme(rect = element_rect(fill = "transparent"), 
+                                   title = element_text(size = 11), 
+                                   axis.text.x = element_text(angle = 45))+
+                           labs(title = paste0("Age Cohort: ",
+                                               str_replace_all(.y, 
+                                                               pattern="_", " ")),
+                                subtitle = "Note Axis Scale, 
+                                Yellow Indicates 4-Qtr Moving Average (Right)", 
+                                x = NULL,
+                                y = NULL)))
+
+# This first makes the 6 in idual plots 
+# using the purrr:invoke function
+# Then we arrange each of these plots on a 2x3 
+# with a title, caption and y-axis
+# label for the grid (rather than for each in idividual plot)
+
+invoke(grid.arrange, p_all$plots_by_cohort,
+       top = textGrob("Homeownership Rate by Age of Householder", hjust = 0, x = 0, 
+                      gp=gpar(fontface ="bold", fontsize = 14)),
+       left = "Homeownership %",
+       bottom = textGrob("U.S. Census, CPS/HVS", hjust = 1, x = 0.9, 
+                         gp = gpar(fontface = "italic", fontsize = 8)))
+
+
+```
+
+For a more detailed look, we will make a plot of just the National and <35 age cohort over a short time period. 
+
+```{r plotViz2, eval = T, echo = T, warning = F, message = F, fig.align="center", fig.height = 7, fig.width = 11}
+
+p_subset <- p_all%>%
+  filter(variable %in% c("national", "under_35_years"))%>%
+  mutate(data_sub = map(data, ~filter(., year(full_dt) > 2009)), 
+         plots_by_cohort_sub = map2(plots_by_cohort, data_sub, ~.x%+%.y))
+
+lapply(seq_along(p_subset$plots_by_cohort_sub), 
+       function(x) p_subset$plots_by_cohort_sub[[x]])
+
+```
+
+[1]: https://www.calculatedriskblog.com/2018/09/lawler-household-estimates-conundrum.html
+[2]: https://www.census.gov/housing/hvs/index.html
+[3]: https://www.census.gov/housing/hvs/data/histtabs.html
+[4]: https://raw.githubusercontent.com/stuartiquinn/datasets/master/CPS-HVS-Homeownership/hvs_homeownership_dl_helper.R
+[5]: https://www.brodrigues.co/blog/2017-03-29-make-ggplot2-purrr/#
+
+<!--chapter:end:2018-11-24-visualizing-the-homeownership-rate-in-the-u-s.Rmd-->
+
+---
+title: Visualization Practice in R (Economist Replication)
+author: Stuart I. Quinn
+date: '2019-01-21'
+slug: visualization-practice-in-r-economist-replication
+categories:
+  - R
+  - Economy
+tags:
+  - EconViz
+  - DataViz
+  - EuroStat
+---
+
+## About the Project
+
+Each week The Economist shows up in my mailbox and I am met with the conflicting sentiment of excitement and despair. Excited to have the latest news with more reflection than the pace of twitter, but despair because I have normally only consumed one or two articles from the previous issue arriving. 
+
+Between work, other news sources and my appetite to continue to hone my skills in R -- little time is left for consuming the dense and frequent writing. The solution, attempt to consolidate my hobbies, by selecting a chart from each issue to recreate with R! 
+
+Throughout 2018, I will try to re-create a single chart from each issue released throughout 2017 (did I mention, I can't throw them away...) with the hope of catching up the more recent issues by half way through the year. 
+
+So let's begin...
+
+### Magazine Details
+**January 2017 - Week 1**
+
+**Issue Title:** The Next Frontier
+
+**Article Title:** Italy, Their Generation
+
+**Graph Title:** The Italian Exception
+
+**Article Page Number:** 35
+
+### Data Details
+
+**Data Source:** eurostat
+
+**Data Table Title:** demo.pjan
+
+**Data Table Code:** tps00001
+
+**Data Base Link:** [Here][1]
+
+**Data Category:** Demographics
+
+## About the Data
+
+Admittedly, I did do some massaging of the data outside of R in order to get it into a better state for loading...I may or may  never come back to do the cleaning in R or better yet, use the eurostat package to load the data directly. 
+
+```{r adminSetup, echo = T, eval = T, message = F, warning = F, highlight = T}
+# rm(list = ls())
+# Optional - don't treat strings as factors, 
+# no scientific notation for large #'s
+options(stringsAsFactors = F, scipen = 99)
+
+# Required Packages - install if necessary
+# UPDATE TO INSTALL IF DON'T EXISt
+pks <- c("tidyverse", "purrr", "tools", "fs", "lubridate", 
+         "stringr", "readxl", "ggthemes", "eurostat")
+
+invisible(lapply(pks, require, character.only = T))
+
+
+# Name of the file for reading in
+# NOTE - this may vary depending on your file names
+d_fname <- "1.1_eu_pop_by_age.tsv"
+```
+
+## Load Data and Clean it Up
+
+Unfortunately, read_tsv does not import perfectly -- so we need to do some additional cleaning: 
+
+#### Cleaning Steps
+
+1. Select columns of interest
+2. Separate columns that did not import correctly and rename
+3. Filter data to grab geographies of interest (Italy v. EU28 combined)
+4. Remove totals and unknown age observations
+5. Further clean-up observations
+6. Create age cohort groups (data is individual years/age)
+
+
+####Aggregating Steps
+
+1. Create clean labels by establishing a FROM age TO age
+2. Create an 85+ Category 
+3. Get total population by Italy v. EU28 (for percent of total calc)
+4. Create totals and percent of total by additional groups (sex, age cohort)
+5. Ensure that one value (M = Negative, F = Positive) for our pyramid plot
+
+```{r loadData, echo = T, eval = T, message = F, warning=F, include = T, highlight=T, fig.align = "center"}
+
+# https://blogdown-demo.rbind.io/2018/02/27/r-file-paths/
+# For reading in data with blogdown
+
+## NOTE special directory for the data files
+
+age_cut <- seq(0,85,5)
+
+# Data loading and cleaning
+d <- read_tsv(paste0("../../static/data/econ-viz-data/jan-issues/", 
+                     d_fname),
+              col_names = T)%>%
+  select(contains("unit"), `2017`)%>%
+  separate(.,col = "unit,age,sex,geo\\time", sep=",", into = c("unit", "age", "sex", "geo"))%>%
+  filter(geo %in% c("IT", "EU28"))%>%
+  filter(!age %in% c("TOTAL", "UNK"))%>%
+  filter(!sex == "T")%>%
+  filter(age != "Y_LT1" , age !="Y_OPEN")%>%
+  mutate(age = as.numeric(str_replace_all(age, pattern="Y", "")), 
+         value_2017 = as.numeric(str_replace_all(`2017`, pattern="[^0-9]", "")), 
+         age_cut = cut(age, breaks = c(seq(0,85,5), Inf)))%>%
+  select(-`2017`)
+  
+# Data aggregations by groupings 
+d_sub <- d%>%
+  separate(age_cut, sep = ",", into = c("from", "to"), remove = F)%>%
+  mutate_at(vars("from", "to"), str_replace_all, pattern = "[^0-9]","")%>%
+  mutate(to = as.numeric(to)-1)%>%
+  mutate(clean_lab = paste0(from, " - ", as.character(to)), 
+         clean_lab = if_else(grepl(clean_lab, pattern = "NA")==T, "85+", clean_lab))%>%
+  select(-c(unit, from, to))%>%
+  group_by(geo)%>%
+  mutate(tot_pop = sum(value_2017, na.rm = T))%>%
+  group_by(sex, age_cut, clean_lab, add = T)%>%
+  summarize(cohort_pop = sum(value_2017, na.rm = T), 
+            pct_tot = cohort_pop/unique(tot_pop))%>%
+  mutate(plot_value_pct = if_else(sex=="M", round((pct_tot*-1)*100,2), 
+                                  round(pct_tot*100, 2)))%>%
+  arrange(geo, age_cut)%>%
+  ungroup()
+
+```
+
+## Build Plot - Pyramid Plot
+
+Pyramid plots are the most frequently utilized tool for evaluating demographic trends within a geography. Since population demographics are a massive contributor to economic measures (especially housing), it is important to know how much of the population is of prime working age, entering retirement or somewhere in between. Generally a younger population indicates pent up economic output that will be realized in the future, while a large aging population is more concerning since there will be less overall contribution to the economy (and sometimes even a drag depending on the social programs within the country -- think healthcare as an example)
+
+Since the Economist viz includes bars as the baseline to compare the Italy population against other EU28 countries, we will first extract a summary measure for that aggregation. Then we we can build our pyramid (barplot) and overlay where Italy sits by age cohort relative to the combined population of the EU28 cohorts by gender.
+
+```{r plotViz, echo = T, eval = T, warning = F, message = F, fig.align = "center", fig.height= 7, fig.width= 11, tidy = T, highlight = T}
+
+eu28_bar <- filter(d_sub, geo == "EU28")%>%
+  select(age_cut, sex, plot_value_pct)
+
+ggplot(data = filter(d_sub, geo=="IT")%>%arrange(geo, age_cut), 
+       aes(x = age_cut, y = plot_value_pct, fill = sex))+ 
+  geom_bar(stat = "identity", width = 1, color = "white")+
+  geom_errorbar(data=filter(d_sub, geo=="EU28")%>%arrange(geo, age_cut), 
+                aes(ymax = plot_value_pct, ymin = plot_value_pct, 
+                    color = "goldenrod4"), size = 1.85)+
+  theme_minimal(base_family = "Roboto") + 
+  scale_y_continuous(breaks = c(seq(-10, 10, 2)), labels = function(y) paste0(abs(y)))+ 
+  scale_x_discrete(labels = unique(d_sub$clean_lab)) + 
+  scale_fill_manual(name = "Italy", values = c("royalblue4", "royalblue1")) + 
+  scale_color_manual(name = "EU28", values = "goldenrod4", labels = NULL)+
+  coord_flip() + 
+  labs(x = "", 
+       y = "", 
+       title = "The Italian Exception", 
+       subtitle = "Population by sex and age group, 2017, % of Total", 
+       fill = "", 
+       caption = "Source: Eurostat")+
+  theme(legend.position = "top", 
+        legend.direction = "horizontal")
+
+
+
+
+```
+
+
+
+[1]: https://ec.europa.eu/eurostat/web/population-demography-migration-projections/data/main-tables
+
+<!--chapter:end:2019-01-21-visualization-practice-in-r-economist-replication.Rmd-->
+
+---
+title: Visualizing Party Platform Text for Anti-Trust (Economist Project)
+author: Stuart I. Quinn
+date: '2019-01-21'
+slug: visualizing-party-platform-text-for-anti-trust-economist-project
+categories:
+  - R
+  - Politics
+tags:
+  - DataViz
+  - TextAnalysis
+  - EconViz
+---
+
+## Background
+
+As I mentioned in a [previous post][1] -- this is the second graph from my replication of The Economist graphs. I have discovered that not all of the data/visuals within the Economist come from free sources, nor provide extensive details around any sort of "author's calculations." This greatly reduces the reproducibility of a number of my favorite and insightful charts from each issue. With that said, I spent some extra time attempting to re-create the feature article within January 2017 - Week 2. Fortunately, I was familiar with the source of data since I have previously built wordclouds based on State of the Union Speeches (or SOTUS for the beltway crowd). 
+
+This post takes political  party platform data to evaluate the diminishing mentions of Anti-Trust. Since this analysis is somewhat data intensive, I am not going to host all of the information, but I'll try to provide enough documentation for others to re-create the visual. 
+
+### Magazine Details
+
+**January 2017 - Week 2**
+
+**Issue Title:** The New Titan's and How to Tame Them
+
+**Article Title:** Coping with Techlash
+
+**Graph Title:** Monopoly is not a game
+
+**Article Page Number:** 19
+
+### Data Details
+
+**Data Source:** UC Santa Barbara, Presidents Project
+
+**Data Base Link:** [Here][2]
+
+**Data Category:** U.S. Politics
+
+## About the Data
+
+If you are not familiar with the UC Santa Barbara, Presidents Project and are a fan of politics -- you should definitely visit the site. The number of documents and dedication to cataloging is incredibly impressive and seamless to search through. The organization also does their own great bit of analysis with the data as well. 
+
+We will focus on the National Political Party platforms that have been catalogued by the non-profit. 
+
+```{r adminSetup, echo = T, eval = T, message = F, warning = F, highlight = T}
+
+pks <- c("tidyverse", "purrr", "tools", "fs", "lubridate", 
+         "stringr", "readxl", "ggthemes", "tidytext", "rvest")
+
+
+invisible(lapply(pks, require, character.only = T))
+
+
+```
+
+## Getting the Data
+
+As I mentioned, I will not be executing the code below -- however, this provides how the data can be quickly downloaded locally for replicating/further analysis. 
+
+```{getData echo = T, eval = F, message = F, warning=F, include = T, highlight=T,}
+
+# HTML Table with links to party platform
+
+base_url <- "https://www.presidency.ucsb.edu/documents/presidential-documents-archive-guidebook/national-political-party-platforms"
+
+# xpath of the table to get all permalinks of platform text
+site_xpath <- "//*[@id='block-system-main']/div/div/div/div[2]/table"
+
+set_col_nms <- c("dt_yr", "party", "nominee", "electoral_votes", "word_cnt")
+
+# Get text from tables so we know what is contained within the links
+d_txt_full <- read_html(base_url)%>%
+  html_nodes(xpath = site_xpath)%>%
+  html_table(fill=T)%>%
+  .[[1]]%>%
+  .[-1, -3]
+
+# Capture notes from data, then we will remove them once we have
+# them stored in another object
+d_notes <- d_txt_full[nrow(d_txt_full), ]
+
+# Identify which rows have years so we can remove unnecessary rows
+# (and have clean numeric years)
+d_txt_clean <- d_txt_full%>%
+  .[-nrow(.),]%>%
+  setNames(., set_col_nms)%>%
+  mutate(row_remove = if_else(str_length(dt_yr) > 2, 0, 1),
+         word_cnt = as.numeric(str_replace_all(word_cnt, pattern="[^0-9]", "")))%>%
+  filter(row_remove == 0)%>%
+  select(-row_remove)
+
+# Create a dataframe with two columns: 
+# Col1 = All of the links
+# Col2 = The text 
+d_url_full <- bind_cols(
+  read_html(base_url)%>%
+    html_nodes(xpath = site_xpath)%>%
+    html_nodes("a")%>%
+    html_attr("href")%>%
+    as_tibble(),
+  read_html(base_url)%>%
+    html_nodes(xpath = site_xpath)%>%
+    html_nodes("a")%>%
+    html_text()%>%
+    as_tibble)%>%
+  setNames(., c("txt_url", "format"))%>%
+  filter(format != "pdf")%>%
+  mutate(format = paste0(format,"-HTML"))
+
+# Combine notes and references within a single dataframe
+d_notes <- bind_cols(d_notes, d_url_full[nrow(d_url_full), ])
+
+# Create a dataframe with url for dloading, party name and year
+# of platform
+d_ref_txt <- bind_cols(d_txt_clean, d_url_full[-nrow(d_url_full), ])
+
+# Loop through the datafram we just created in order to 
+# download all of the text from the site urls and save the files
+# with National party name (e.g. Dem v. GOP) and year
+
+for(i in seq(nrow(d_ref_txt))){
+
+  text <- read_html(d_ref_txt$txt_url[i])%>%
+  html_nodes(xpath = "//*[@id='block-system-main']/div/div/div[1]/div[3]") %>% # isloate the text
+  html_text() # get the text
+
+  fname <- paste0(d_ref_txt$dt_yr[i], d_ref_txt$party[i], "-",
+                  str_replace_all(d_ref_txt$nominee[i],pattern=" ", ""), ".txt")
+
+  sink(file = fname) %>% # open file to write
+    cat(text)  # write the file
+  sink() # close the file
+}
+
+
+```
+
+## Load and Clean Data
+
+Now that we have all of the text for each party, for each year -- we can load the text in for analysis. 
+
+```{loadData echo = T, eval = F, message = F, warning=F, include = T, highlight=T, fig.align = "center"}
+
+# the directory where you downloaded all of the text files
+wd_txt <- paste0(getwd(), "YOUR DIRECTORY HERE")
+
+# Get file names
+f_gop <- dir_ls(wd_txt, regexp = "Repub")
+f_dem <- dir_ls(wd_txt, regexp = "Demo")
+
+# Load data into R environment
+d_txt_full <- bind_rows(f_gop%>%
+                          map_chr(~read_file(.))%>%
+                          data_frame(text = .)%>%
+                          mutate(party = "GOP", 
+                                 dt_yr = as.numeric(str_sub(basename(f_gop), 0,4))),
+                        f_dem%>%
+                          map_chr(~read_file(.))%>%
+                          data_frame(text = .)%>%
+                          mutate(party = "DEMOCRATS", 
+                                dt_yr = as.numeric(str_sub(basename(f_dem), 0,4))))
+
+```
+
+#### Cleaning Steps
+
+For some of the language used here, refer to the free online book for Text Mining in R with the package tidytext ([link][3])
+
+1. Get all of the file names within the direcotry by party
+2. Load all of the text files by party, creating a new column representing which party and year
+3. Bind the data together by rows so all of the text is in a single dataframe
+4. Once we have the data, we need to create unique rows for "bigrams" or by each two consecutive words within the text
+5. Finally, we need to clean the search word we're interested in (Anti-Trust). With any text analysis, there is some ambiguity about locating all of the references. 
+
+For example, it could be Anti-Trust, anti trust, antitrust or something evermore vague like the Sherman Act (the primary statute implementing Anti-Trust laws)
+
+#### Aggregation Steps
+
+1. Once we have our "bigrams" with antitrust, we need to group them by party and year, in order to get a frequency of use. 
+
+
+```{cleanData echo = T, eval = F, message = F, warning=F, include = T, highlight=T, fig.align = "center"}
+
+d_bigram <- d_txt_full%>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)%>%
+  group_by(bigram, party, dt_yr)%>%
+  summarize(bigram_cnt = n())%>%
+  arrange(desc(bigram_cnt))%>%
+  ungroup()
+
+d_at_bigrams <- d_bigram%>%
+  mutate(bigram_trim = str_replace_all(bigram, pattern = " ", ""))%>%
+  filter(grepl(bigram_trim, pattern = "antitrust", ignore.case = T))
+
+d_bigram_sub <- d_bigram%>%
+  mutate(bigram_trim = str_replace_all(bigram, pattern = " ", ""))%>%
+  filter(grepl(bigram_trim, pattern = "antitrust", ignore.case = T))%>%
+  group_by(dt_yr, party)%>%
+  summarize(grp_cnt = sum(bigram_cnt, na.rm = T))%>%
+  ungroup()%>%
+  mutate(dt_full = as.Date(paste(dt_yr, "01", "01", sep = "-")))%>%
+  arrange(dt_yr, party)
+
+```
+
+## Plot Data
+
+We will create a time-series barplot based on the number of bigrams using the term Anti-Trust within each parties platform text. 
+
+```{r plotViz, echo = T, eval = F, warning = F, message = F, fig.align = "center", fig.height= 7, fig.width= 11, tidy = T, highlight = T}
+
+p1 <- ggplot(d_bigram_sub, aes(x = dt_yr, y = grp_cnt, fill = party, group=party))+
+  geom_bar(stat = "identity", position = position_dodge2(width = 0.9, preserve = "single"))+
+  scale_fill_manual(values = c("navy", "darkred"), name = NULL)+
+  scale_x_continuous(breaks = c(seq(1900, 2010, 10), 2016))+
+  labs(title = "Monopoly is not a game", 
+       subtitle = "Mentions of 'antitrust' in Democratic and Republican platforms", 
+       x = NULL,
+       y = NULL, 
+       caption = "Source:UC Santa Barbara - President's Project, bigram counts")+
+  theme_minimal()+
+  theme(legend.position = "top")
+
+
+
+ggsave("Political-Platform-Use-of-Antitrust.png", p1, width = 9, height = 7,bg = "transparent")
+```
+
+<img alt = 'my new screenshot' width='650' height = '400' src='/png-plots/jan-issue/Political-Platform-Use-of-Antitrust.png') />
+
+[1]: https://www.siq-blog.com/2019/01/21/visualization-practice-in-r-economist-replication/
+[2]: https://www.presidency.ucsb.edu/documents/presidential-documents-archive-guidebook/national-political-party-platforms
+[3]: https://www.tidytextmining.com/
+
+<!--chapter:end:2019-01-21-visualizing-party-platform-text-for-anti-trust-economist-project.Rmd-->
+
+---
+title: Sizing the U.S. Residential Mortgage Market (Part I)
+author: ''
+date: '2020-01-03'
+slug: sizing-the-u-s-residential-mortgage-market-part-i
+categories:
+  - Economy
+  - Housing
+tags:
+  - EconViz
+  - Housing
+  - tidyquant
+---
+
+
+```{r admin, include=FALSE, echo = F, warning = F, message = F, eval = T}
+if(!require(pacman)){
+  install.packages("pacman")
+  require(pacman)
+}
+
+p_load(tidyverse, lubridate, stringr, purrr, viridisLite, 
+       scales, fs, tools, tidyquant, knitr, readr, readxl, knitr)
+
+# d_path <- paste0(getwd(), "/data/")
+
+
+```
+
+### Sizing U.S. Residential Mortgage Markets
+
+The U.S. residential mortgage market is one of the most unique in the world given the secondary market financing structure enabled by private market participants and government programs. It is followed not only by your average consumer looking for shelter, but also by:
+
+* politicians at every jurisdictional level
+* advocates and academics 
+* investors and analysts and 
+* regulators 
+
+Just to name a few....
+
+
+### A quick rundown on terminology 
+
+There thousands of metrics and measure monitored to evaluate opportunities and lurking risks in housing. This first post will simply cover some of the key aggregate national market measures. 
+First, a few key **terms** and definitions: 
+
+1. **Residential:** Generally (and for this post), we mean 1 - 4 unit single family residences / duplexes and town homes (some measures include manufactured housing as well). 
+2. **Mortgage:** Financing instrument with accompanying deed indicating the amount owed (debt). This will exclude rentals and leases 
+3. **Origination:** The face value of money owed on the mortgage note when closing
+4. **Debt:** Remaining balance owed by an individual to a financial institution
+5. **Equity:** Value owned by an indivdaidual or non-profit through principal payments on mortgage and/or accrued through appreciation in the house and the land it is affixed. 
+
+Measure types:
+
+1. Stock: The total level of the unit in question
+2. Flow: The inflow or outflow of the unit in question modifying the total stock of unit
+
+These are very high-level summary of terms -- there are a myriad of sources that unwind the nuances and criteria. 
+
+### So just how big of a market is it? 
+
+For this post, we'll cover a standard set of metrics. Each metric varies slightly and helps analysts or individuals understand the magnitude of the U.S. residential housing market in terms of $'s. 
+
+1. Annual Originations (Flow | $'s): The number of new mortgages (purchase loans and re-finances). (Flow Metric)
+
+2. Mortgage Share as Percent of Originations (Flow | %): The percent of originations in $'s as a percent of total originations, segmented by the end investor who owns rights to the underlying asset in the event of non-repayment. 
+
+3. Total Homeowners Equity (Stock | $): The amount of equity/value available to individuals who own their home partially or outright
+
+
+### Note about the code
+
+The work horse for this analysis (and most analysis) is tidyverse, tidyquant and lubridate. Since we are working with time-series data, tidyquant is of particular use given it's ability to call the St. Louis maintained Federal Reserve Economic Data [(FRED) datasets][1] quickly into your environment. 
+
+Data is sourced primarily from government sources, though some data is tracked and published by commercial entities. 
+
+### Data Analysis
+
+#### Origination volume by loan purpose
+
+There are thousands of lenders originating mortgages on a daily basis within the U.S., therefore, it is very difficult to get a real-time actual data so forecasting as necessary. Within the housing industry, you will generally see experts cite an average of multiple forecasts. 
+
+Below you can find the average quarterly estimates produced by [Fannie Mae][2], [Freddie Mac][3] and the [Mortgage Bankers Association][4]. These estimates are revised on a monthly basis by their team's of economists to try to understand the expected annual volume of mortgage originations. 
+
+#### 1. Load data from local source (see references for detail)
+
+```{r loadDataOrig, echo = T, eval = T, warning = F, message = F, include = T, highlight =T}
+
+fname <- "../../static/data/1_mtg_mkt_share/20190102_Combined_Mtg_Size_File.xlsx"
+
+ref_sheet_nm <- excel_sheets(fname)
+
+d_orig <- read_excel(fname, sheet = ref_sheet_nm[1])
+
+```
+
+#### 2. Aggregate data to averages 
+
+```{r aggregateOrig, echo = T, eval = T, warning = F, message = F, include = T, highlight =T}
+
+d_orig_avg <- d_orig%>%
+  mutate(dt_full = ymd(dt_full))%>%
+  group_by(dt_full, loan_purpose)%>%
+  summarize(avg_vol_bil = mean(value, na.rm = T))%>%
+  ungroup()%>%
+  mutate(cln_lab = paste0("$", prettyNum(round(avg_vol_bil, 0),big.mark = ",")))
+
+est_avg19 <- filter(d_orig_avg, year(dt_full) == 2019)%>%
+  group_by(loan_purpose)%>%
+  summarize(tot19_bil = sum(avg_vol_bil, na.rm = T))%>%
+  spread(loan_purpose, tot19_bil)%>%
+  mutate(Title = "Total Est. Origination ($B)", 
+         `Est. Total` = Purchase + Refinance)%>%
+  select(Title, Purchase, Refinance, `Est. Total`)%>%
+  mutate_if(is.numeric, ~.x%>%round(.,0)%>%prettyNum(., big.mark = ","))
+
+```
+
+#### 3. Plot Originations
+
+```{r vizOrig, echo = T, eval = T, warning = F, message = F, fig.align="center", include = T, highlight =T}
+
+p1_orig <- d_orig_avg%>%
+  ggplot()+
+  geom_bar(stat = "identity", aes(x = dt_full, y = avg_vol_bil, fill = loan_purpose), 
+           position = "stack")+
+  scale_fill_viridis_d("")+
+  scale_x_date(date_labels = "%Y-%m", date_breaks = "3 months")+
+  scale_y_continuous(label = dollar)+
+  labs(title = "Avg. estimated quarterly originations", 
+       subtitle = "By loan purpose", 
+       x = NULL, 
+       y = "$B", 
+       caption = "Source: MBA, Fannie Mae, Freddie Mac")+
+  theme_minimal()+
+  theme(legend.position = "top")
+  
+p1_orig
+
+est_avg19%>%
+  kable()
+
+```
+
+
+
+### Investor share as percent of origination volume
+
+
+This metric measures who those originations are ultimately sold to in the secondary market. There are a variety of different "disposition" or "execution" strategies, but the majority of the market has and continues to be government (Federal Housing Administration (FHA), Veteran's Administration (VA) or quasi government agencies such as Fannie Mae (FNMA) and Freddie Mac (FRE). Together FNMA and FRE are referred to as the GSEs (or Government Sponsored Enterprises)
+
+Private financial institutions purchase mortgage back securities from FNMA/FRE and Ginnie Mae (who structures FHA/VA/USDA loans into securities). Similarly, some private entities create their own Private Label Securities (PLS) or hold loans on their portfolio. 
+
+The data below is produced by [Inside Mortgage Finance (IMF)][5] a commercial entity, but the data was sourced from the [U.S. Treasurey Financial Stability Oversight Council][6] and the [Urban Institute][7]. 
+
+We will follow the same steps for this data. 
+
+```{r invShare, echo = T, eval = T, warning = F, message = F, fig.align= "center", include = T, highlight =T}
+
+d_inv_share <- read_excel(fname, ref_sheet_nm[2])%>%
+  mutate(dt_yr = year(dt_yr))%>%
+  rename(`FHA/VA` = fha_va, GSEs = gse, `PLS/Balance Sheet` = pls_portfolio)%>%
+  select(-note)%>%
+  gather(variable, value, -dt_yr)
+
+
+d_labs <- d_inv_share%>%
+  group_by(variable)%>%
+  slice(which.max(dt_yr))%>%
+  ungroup()%>%
+  mutate(clean_label = paste0(value, "%"),
+         clean_ylab = value,
+         clean_xlab = dt_yr+1)%>%
+  select(dt_yr, value, variable, contains("clean"))
+
+
+p1_inv <- ggplot(data = d_inv_share, aes(x = dt_yr, y = value, group = variable, fill = variable))+
+  geom_bar(stat = "identity", position = "stack")+
+  scale_fill_viridis_d()+
+  scale_x_continuous(breaks = seq(min(d_inv_share$dt_yr), max(d_inv_share$dt_yr), 1))+
+  # geom_text(data = d_labs, position = "stack",
+  #           aes(x=2019, y = clean_ylab, label=clean_label, group = variable), 
+  #           vjust = 0.5, hjust = -0.5, angle = 90)+
+  labs(title = "Total new originations by investor",
+       subtitle = "Percent share, 2019 data through Q2",
+       x = NULL,
+       y = "% share",
+       caption = "Inside Mortgage Finance, Urban Institute, UST-FSOC")+
+  theme_minimal()+
+  theme(legend.position = "top", 
+        legend.title = element_blank(), 
+        axis.text.x = element_text(angle = 90))
+
+p1_inv
+
+```
+
+
+### Total Homeowner Equity 
+
+
+Homeowner equity is an important metric in understanding wealth effects in the broader economy. There are two main components which drive this figure: (i) age of the mortgage (i.e. how many payments towards acquiring the asset as a homeowner made); (ii) home price valuations.
+
+The data we're utilizing is produced by the Federal Reserve (FRB) and is aggregated in what was previously known as their flow of funds reports, now "The Financial Accounts of the United States." In further posts, we'll explore homeowner equity at a more granular level. 
+
+> For this analysis, we use the tidyquant package, which has a wrapper to easily serve update the data. I utilize this primarily for economic data, but it can also be utilized for stock market information. We will primarily be utilizing the function tidyquant:tq_get(), which is passed a symbol or ticker
+
+We will get all the data at once to make our minimal pre-processing easier. 
+
+1. Create a vector of tickers/symbols OR a tibble for additional context
+2. Use tidyquant::tq_get to retrieve data
+3. Do some minor cleaning: (i) convert dates to quarters; (ii) create separated year and month values for future plotting
+
+```{r loadTQ, echo = T, eval = T, warning = F, message = F, include = T, highlight =T}
+
+
+# Create tibble of Economic Data of Interest w/ Short Description
+
+fred_base_url <- "https://fred.stlouisfed.org/series/"
+d_tks <- tibble(tks = c("OEHRENWBSHNO", "HOEREPHRE", "MDOTP1T4FR", "GDP", 
+                        "CCLBSHNO", "HHMSDODNS", "CMDEBT", "HNODPI"), 
+                title = c("Households (HH); owners' equity in real estate, Level", 
+                          "Households; owners' equity in real estate as a percentage of household real estate, Level", "Mortgage Debt Outstanding by Type of Property: One- to Four-Family Residences", "Gross Domestic Product, Seasonally Annual Adjusted Rate", 
+                          "HH Consumer Credit", "HH Mortgage Debt", "HH Credit Market Instruments", "HH Disposable Personal Income"))%>%
+  mutate(row_id = row_number(), 
+         url = paste0(fred_base_url, tks))
+
+
+# LOAD ALL TICKERS 
+# **NOTE** WE WONT BE USING ALL OF THESE METRICS
+
+# tq_get automatically gets a "shorter" time period so we define long-run time-series
+# the function returns the date as a full yyyy-mm-dd given different variables are 
+# reported at different frequency. We know these are all reported quarterly by the fed
+# since they come from the same report
+
+
+# Finally, tickers are great, be we'll join our reference tibble for future reproducibility 
+# 
+d_eco <- tidyquant::tq_get(x = d_tks$tks, get = "economic.data", from = "1975-01-01")%>%
+  mutate(dt_qtr = case_when(
+    month(date) == 1 ~ paste0(year(date), "-Q1"), 
+    month(date) == 4 ~ paste0(year(date), "-Q2"), 
+    month(date) == 7 ~ paste0(year(date), "-Q3"), 
+    month(date) == 10 ~ paste0(year(date), "-Q4")
+  ))%>%
+  left_join(., select(d_tks, tks, title), by = c("symbol"="tks"))%>%
+  rename(value = price)
+
+
+
+```
+
+
+#### Plotting a single metric
+
+
+```{r hhEqViz, echo = T, eval = T, warning = F, message = F, fig.align = "center", include = T, highlight =T}
+
+d_hh_eq <- filter(d_eco, symbol == "HOEREPHRE")
+
+p_hh_eq_curr <- d_hh_eq%>%
+  slice(which.max(date))%>%
+  mutate(clean_lab = paste0(dt_qtr, ": ", prettyNum(round(value,0), big.mark = ","), "%"))%>%
+  select(date, value, clean_lab)
+
+p1_hh_eq <- d_hh_eq%>%
+  ggplot()+
+  geom_line(aes(x = date, y = value), color = "navy", size = 1.15)+
+  geom_hline(data = p_hh_eq_curr, aes(yintercept = value), color = "darkred", size = 1.1, linetype = 2)+
+  geom_point(data = p_hh_eq_curr, aes(x = date, y = value), size = 5, color = "darkred", 
+             alpha = 0.7)+
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y")+
+  scale_y_continuous(labels = dollar)+
+  labs(title = "Households (HH) homeowners equity as % of HH real estate", 
+       subtitle = paste("As of", p_hh_eq_curr$clean_lab), 
+       x = NULL,
+       y = "%", 
+       caption = "U.S. Federal Reserve Board (FRB)")+
+  theme_minimal()
+
+p1_hh_eq
+
+
+
+```
+
+## What next? 
+
+Those are just a few metrics, we'll take a deeper dive in future posts as it relates to: (i) meaningfulness of the data; (ii) alternative metrics to compare against; (iii) components of aggregate measures and maybe even a function to quickly plot future FRB data...
+
+
+
+
+[1]: https://research.stlouisfed.org/about.html "St. Louis Federal Reserve Bank"
+[2]: https://www.fanniemae.com/portal/research-insights/forecast.html "Fannie Mae Forecasts"
+[3]: http://www.freddiemac.com/research/forecast/index.page "Freddie Mac Forecasts"
+[4]: https://www.mba.org/news-research-and-resources/research-and-economics/forecasts-and-commentary "Mortgage Bankers Association Forecasts"
+[5]: https://www.insidemortgagefinance.com/ "Inside Mortgage Finance (IMF)"
+[6]: https://home.treasury.gov/system/files/261/FSOC2018AnnualReport.pdf "U.S. Treasure, Financial Stability Oversight Council, 2018 Annual report"
+[7]: https://www.urban.org/policy-centers/housing-finance-policy-center/projects/housing-finance-glance-monthly-chartbooks "Urban Institute, Housing Finance Policy Center" 
+
+
+
+
+
+
+<!--chapter:end:2020-01-03-sizing-the-u-s-residential-mortgage-market-part-i.Rmd-->
+
+---
+title: Seattle Comprehensive Plan - Growth Strategy
+author: Stuart Quinn
+date: '2020-01-14'
+slug: seattle-comprehensive-plan-growth-strategy
+categories:
+  - Housing
+  - Demographics
+tags:
+  - R
+  - Housing
+  - Seattle
+---
+
+```{r admin, include=FALSE, echo = F, warning = F, message = F, eval = T}
+if(!require(pacman)){
+  install.packages("pacman")
+  require(pacman)
+}
+
+p_load(tidycensus, tigris, tidyverse, lubridate, stringr, 
+       viridisLite, fs, tools, sf, geojsonsf, leaflet, 
+       RColorBrewer, rvest, scales)
+
+
+```
+
+### A Growth Strategy Evolution 
+
+Last week the Seattle Planning Commission released an interim white paper titled [Evolving Seattle's Growth Strategy][1] -- foreshadowing their updates to the Commission's revised Comprehensive Plan due in 2023. 
+
+The white paper, builds off the foundation [Seattle 2035 - Growth and Equity report (May, 2016)][2] and the Commissions most recent [Neighborhoods for All][3] reports.
+
+#### A Quick Background
+
+**The Planning Commission**
+
+*The Seattle Planning Commission is an independent, 16-member advisory body
+appointed by the Mayor, City Council, and the Commission itself. The members of
+the Commission are volunteers who bring a wide array of expertise and a diversity
+of perspectives to these roles.*
+
+**The Legal Directive(s)**
+
+1. [2009 - Adoption of Resolution 31164][4]
+
+>A RESOLUTION affirming the City's race and social justice work and directing City Departments to use available tools to assist in the elimination of racial and social disparities across key indicators of success, including health, education, criminal justice, the environment, employment and the economy; and to promote equity within the City workplace and in the delivery of City services.
+
+2. [2014 - Executive Order 2014-02][5]
+>This Executive Order affirms the City of Seattle’s commitment to the Race and Social Justice Initiative (RSJI), and expand RSJI’s work to include measurable outcomes, greater accountability, and community wide efforts to achieve racial equity in our community. 
+
+3. [2015 - Adoption of Resolution 31577][6]
+>A RESOLUTION confirming that the City of Seattle’s core value of race and social equity is one of the foundations on which the Comprehensive Plan is built
+
+The city of Seattle realized early on the potential dark sides of urban growth and attempted to provide thoughtful forward planning through a set of strategic and policy remedies that could potentially stem the strain on current and future residents.Though there are many contributing factors to the cities rapid growth (for instance the beautiful natural amenities, temperate climate, etc.), the reality likely resides more so within the expansion of the technology sector and gainful employment. Amazon company growth and signaling in 2017 of targeting 100,000 new hires, coupled with unaffordable housing conditions in nearby San Francisco likely increased in-migration to the city of Seattle. 
+
+### Net Migration for King County 
+
+Using the wonderful R package tidycensus, we'll quickly take a look at annual migration growth for King County, WA (of which Seattle is a part of) with a few lines of code. In addition, we'll quickly compare the population distributions by race between 2010 and 2018. **Note:** A [U.S. Census api key][8] is required to use tidycensus.
+
+The majority of the data is self-contained within the tidycensus::get_estimates wrapper calling the API, but we'll add a few extra steps simply for describing the categories pulled down. As usual, we'll be utilizing tidyverse (stringr, ggplot2, dplyr, rvest) and the scales package for consuming and plotting the data below. 
+
+#### Retrieving the data from Census API
+
+1. First we'll create reference tibbles to join to our data set on code id
+2. Then source the data from U.S. Census
+  + Net migration population component (2010 through 2018)
+  + Proportion of population by race (2018 v. 2010)
+3. Join reference tables to [Census data on codes][9]
+
+```{r getDemData, echo = T, eval = T, warning = F, message = F, include = T, highlight =T}
+
+# Per tidycensus documention, you may need to load API 
+# census_api_key("YOUR API KEY GOES HERE")
+
+# Reference Tables: 
+#1. Migration Estimates Reference
+kc_yr <- tibble(ts_per = seq(1,8,1), 
+                ts_yr_from = seq(2010, 2017, 1), 
+                ts_yr_to = seq(2011, 2018, 1), 
+                ts_lab = paste("From", ts_yr_from, "to", ts_yr_to))
+
+#2. Racial Demographic Reference table (using rvest package to scrape table)
+
+# Get site url
+# Once on site, right-click - > inspect to find the html code, then right click to copy 
+# the xpath 
+race_url <- "https://www.census.gov/data/developers/data-sets/popest-popproj/popest/popest-vars/2018.html"
+race_xpath <- "//*[@id='detailContent']/div/div/div[8]/div[2]/div[1]/div"
+
+kc_race_ref <- read_html(race_url)%>%
+  html_nodes(xpath = race_xpath)%>%
+  html_nodes("p")%>%
+  html_text()%>%
+  tibble("cd_in"=.)%>%
+  separate(cd_in, sep="=", into = c("race_cd", "race_desc"))%>%
+  na.omit()%>%
+  mutate(race_cd = as.numeric(race_cd))
+
+
+# Source Data **NOTE** product variable setting
+
+# NET MIGRATION for KING COUNTY, time_series gives us data from 2010 to current
+kc_component <- get_estimates(geography = "county", state = "53", 
+                              county = "033", time_series = T, product = "components")%>%
+  filter(variable == "NETMIG")%>%
+  left_join(., kc_yr, by = c("PERIOD"="ts_per"))
+
+# Population by Race (raw figures, converted into proporitions)
+# Not product variable and breakdown variable 
+
+kc_race <- bind_rows(
+  get_estimates(geography = "county", state = "53", 
+                         county = "033", year = 2018, product = "characteristics", 
+                         breakdown = "RACE")%>%
+    mutate(rep_yr = 2018),
+  get_estimates(geography = "county", state = "53", county = "033", 
+                year = 2015, product = "characteristics", breakdown = "RACE")%>%
+    mutate(rep_yr = 2010)
+)%>%
+  left_join(., kc_race_ref, by = c("RACE"="race_cd"))%>%
+  filter(RACE != 0)%>%
+  mutate(dt_yr_f = as_factor(rep_yr))%>%
+  group_by(dt_yr_f)%>%
+  mutate(prop_race = value/sum(value, na.rm = T))%>%
+  ungroup()
+
+
+```
+
+### Plot data
+
+We can quickly see that King County (of which Seattle is a part of), has a couple of outstanding trends -- a highly homogeneous population (predominately White) and large net in-migration growth (hence the city planning).
+
+```{r demViz, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align="center"}
+
+# Net Migration 
+
+p_netmig <- kc_component%>%
+  ggplot()+
+  geom_bar(stat = "identity", aes(x = reorder(ts_lab, -PERIOD), y = value), fill = "navy")+
+  coord_flip()+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  labs(title = "King County Net Migration", 
+       subtitle = "From 2010 to 2018", 
+       x = NULL, 
+       y = "Persons")
+
+# Race proportion distribution. Comparing 2010 to 2018
+
+p_kc_race <- kc_race%>%
+  ggplot()+
+  geom_bar(stat = "identity", aes(x = reorder(race_desc, prop_race), y = prop_race, group = dt_yr_f, fill = dt_yr_f), 
+           position = "dodge")+
+  coord_flip()+
+  scale_x_discrete(labels = function(x) str_wrap(x, 35))+
+  scale_y_continuous(labels = scales::percent)+
+  scale_fill_manual("",values = c("navy", "darkred"))+
+  theme_minimal()+
+  theme(legend.position = "top")+
+  labs(title = "King County Population by Race (Proportion)", 
+       subtitle = "Comparing 2018 to 2010 Estimates", 
+       x = NULL, 
+       y = "Pop % Est.")
+  
+p_netmig
+
+
+p_kc_race
+
+```
+
+
+### Conclusion and Next Steps
+
+We see there is clearly a looming problem, in a future post we'll use our combination of tidycensus along with sf (simple features) and leaflet package to recreate some of the maps contained within the updates to track progress of the 2035 plan to date based on the most recent report...
+
+[1]:https://www.seattle.gov/Documents/Departments/SeattlePlanningCommission/SPC%20Growth%20Strategy%20White%20Paper%201072020(0).pdf "Evolving Seattle's Growth Strategy"
+[2]: https://www.seattle.gov/Documents/Departments/OPCD/OngoingInitiatives/SeattlesComprehensivePlan/FinalGrowthandEquityAnalysis.pdf "Growth and Equity"
+[3]: http://www.seattle.gov/Documents/Departments/SeattlePlanningCommission/SPCNeighborhoodsForAllFINALdigital2.pdf "Neighborhoods for All"
+[4]: http://clerk.seattle.gov/search/results?s1=&s3=31164&s2=&s4=&Sect4=AND&l=20&Sect2=THESON&Sect3=PLURON&Sect5=RESNY&Sect6=HITOFF&d=RESF&p=1&u=%2F%7Epublic%2Fresny.htm&r=1&f=G "Resolution 31164"
+[5]: http://murray.seattle.gov/wp-content/uploads/2014/04/RSJI-Executive-Order.pdf "Executive Order 2014-02"
+[6]: https://seattle.legistar.com/LegislationDetail.aspx?ID=2269342&GUID=B0DDC78F-6CEC-4E8C-9A1B-CB913457D663 "Resolution 31577"
+[7]: https://www.nytimes.com/2017/01/12/business/economy/amazon-jobs-retail.html "Amazon Hiring"
+[8]: https://walkerke.github.io/tidycensus/articles/basic-usage.html "tidycensus API detail"
+[9]: https://www.census.gov/data/developers/data-sets/popest-popproj/popest/popest-vars/2018.html "U.S. Census PopEst Data Codes"
+
+<!--chapter:end:2020-01-14-seattle-comprehensive-plan-growth-strategy.Rmd-->
+
+---
+title: Seattle Comprehensive Plan Map - Part II
+author: ''
+date: '2020-01-18'
+slug: seattle-comprehensive-plan-map-part-ii
+categories:
+  - R
+  - Housing
+tags:
+  - Seattle
+  - Map
+  - Geo
+---
+
+### Growth Strategy Progress
+
+In a previous [post][1], we provided background of Seattle's comprehensive planning around urban growth within the city. Fortunately, Seattle has a robust open data plan so we can quickly recreate some of the maps introduced in the text with the most recent data published. 
+
+
+In order to complete this analysis we will be predominately using three packages within R to complete the mapping exercise. 
+
+1. tidycensus, tigris = General geographic data
+2. sfc = Formatting, projecting and data type (simple features)
+3. leaflet = An R API wrapper of JS leaflet for building our interactive map
+
+```{r admin, include=FALSE, echo = T, warning = F, message = F, eval = T}
+if(!require(pacman)){
+  install.packages("pacman")
+  require(pacman)
+}
+
+p_load(tidycensus, tigris, tidyverse, lubridate, stringr, 
+       viridisLite, fs, tools, sf, geojsonsf, leaflet, 
+       RColorBrewer, rvest, scales)
+
+
+```
+
+
+The utilization of geographic data is highly technical and there is a lot of nuance that I will not explore in detail for this post. Where possible, I have added linked references so one can dig as deep as they wish to go on varying concepts. 
+
+1. General U.S. jurisdiction hierarchy concepts from the U.S. Census - [Link][2]
+2. Deeper dive on what simple features are and the sfc package - [Link][3]
+3. Applied examples of clipping tigris and tidycensus data by Kyle Walker - [Link1][4], [Link2][5]
+4. R Studio intro to leaflet - [Link][5]
+
+### Steps for Analysis
+
+We will follow our normal process with a few additional steps for managing our geo data. 
+
+1. Load Seattle city data and our geography files from U.S. Census
+2. Clean-up geography data so we have consistent projections and the appropriate bounds of data
+3. Clip geo data sources
+4. Compare visuals of geo data to observe differences in clipping methods
+5. Join data together to ensure we have the appropriate geography data and measures
+6. Create an interactive leaflet map that includes pop-ups of progress to date as reported by Seattle
+
+#### Load data
+
+We will load three different data sets to conduct our analysis: 
+1. State data from the U.S. Census 
+2. Municipal boundary data from Washington state
+3. Seattle planning data on progress aggregated from multiple sources (includes geometry)
+
+A listing of the available non-census data sets (WA / Seattle data sets) can be found [here][7]. 
+
+**NOTE:** We will want to ensure all of our data our in compatible data types and projections. This requires setting our options for tigris package at the outset AND aligning the crs data with sf::st_crs function
+
+```{r getGeoData, eval=T, echo=T, message=FALSE, results="hide", warning=FALSE, highlight=T, include=T}
+
+#Note: Add results="hide" to avoid printing download progress of tigris data...
+
+# Option setting mentioned above to convert tigris to sf
+options(tigris_class = "sf")
+
+# URLS for data: 
+muni_boundary <- "https://opendata.arcgis.com/datasets/d508083ebd7d444b9997639af845937d_1.geojson"
+url_vlg_boundary <- "https://opendata.arcgis.com/datasets/9267e111804b4cc7b44bc73c673e6bda_0.geojson"
+
+
+# Load data into environment
+
+## 1. WA State Tract Level Geometry using Tigris (no link required)
+d_wa_tract <- tracts(state = "WA", cb = T)%>%suppressMessages()
+
+## 2. Load municipal boundaries for Seattle, note we set the crs = to our tigris tract dataset
+
+d_sea_muni <- geojson_sf(muni_boundary)%>%
+  filter(., CITYNAME == "Seattle")%>%
+  st_transform(., st_crs(d_wa_tract), "+no_defs +datum=WGS84 +proj=longlat")
+
+
+## 3. Finally we get our dataset from City of Seattle with the planning measures
+
+d_vlg_designations <- geojson_sf(url_vlg_boundary)%>%
+  st_transform(., st_crs(d_wa_tract), "+no_defs +datum=WGS84 +proj=longlat")
+
+
+```
+
+
+#### Clip Datasets and Explore
+
+Next we will take the 3 different data sets and clip the geographies to explore what they look like and which one process is the most accurate. 
+
+1. View what the WA Tract data looks like from U.S. Census, we'll see we only want a subset of the data
+2. Simple Clip: Clip the tract data based on the boundaries set out in the municipal data set
+3. Advanced Clip: Use sf::st_within to get Washington tracts within bounding box, then use true v. false (index) logic to subset the observations within the tract dataset. 
+
+```{r compareDataMethod, echo = T, eval = T, warning = F, message = F, include = T, highlight =T}
+
+# 2. Simple clip
+d_clip1 <- d_wa_tract[d_sea_muni,]
+
+# 3. Advanced Clip
+
+d_inter <- st_within(d_wa_tract, d_sea_muni)
+d_idx <- map_lgl(d_inter, function(x) {
+  if (length(x) == 1) {
+    return(TRUE)
+  } else {
+    return(FALSE)
+  }
+})
+
+d_clip_adv2 <- d_wa_tract[d_idx,]
+
+
+# Compare maps #1 WA State Tract; #2 Simple Clip; #3 Adv. Clip
+
+ggplot(d_wa_tract)+
+  geom_sf()
+
+ggplot()+
+  geom_sf(data = d_clip1)+
+  geom_sf(data = d_vlg_designations, color = "darkred")
+
+ggplot()+
+  geom_sf(data = d_clip_adv2)+
+  geom_sf(data = d_vlg_designations, color = "darkred")
+
+
+```
+
+We see that the advanced clipping process creates a more tailored dataset that is a more accurate and skinny outline of the city of Seattle. Moreover, we see the boundary projections from our city planning dataset are more compatible with the clipping. Therefore, we'll proceed with that data set for our mapping. 
+
+#### Map Dataset 
+
+In order to visualize our data we'll plot select features on our interactive map. We will utilize the leaflet package, which allows for us to add layers to the plot for the results we desire. 
+
+1. Set bounding box or boundaries of the plot area so our focus is only on Seattle 
+2. Set a color palette for a specific value within the data set
+3. Create popup text that we will pass to our map to appear on selecting a colored geography
+4. Create the plot with each of the layers 
+
+
+
+```{r mapViz, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align="center"}
+
+# Gather bounding box details from our advanced clip go data
+box_max <- d_clip_adv2%>%
+  st_bbox()%>%
+  as.vector()
+
+# Create a color palette based off of the type of Seattle designated geographies 
+
+col_pal <- colorFactor("Blues", domain = d_vlg_designations$TYPE_NAME, reverse = T)
+
+# Build the text of our pop-up when we select a given geography
+# This utilizes htmltools
+
+popup <- paste('<b>Name:</b>', d_vlg_designations$UV_NAME, '<br>',
+               '<b>Type:</b>', d_vlg_designations$TYPE_NAME,'<br>',
+               '<b>Equity Category:</b>', d_vlg_designations$EQUITY_CATEGORY, '<br>', 
+               '<b>Hunits Built Since 2015: </b>', 
+                prettyNum(d_vlg_designations$HU_BUILT_SINCE_15, big.mark=","), '<br>',
+               '<b>Hunits Target Total 2015-35:</b>', 
+                prettyNum(d_vlg_designations$HU_TARGET_15_35, big.mark=","), '<br>', 
+               '<b>Hunits Remaining:</b>', 
+                prettyNum(d_vlg_designations$REMAIN_HU_TARGET, big.mark=","), '<br>')
+
+m <- leaflet(d_vlg_designations)%>%
+  addProviderTiles('CartoDB.DarkMatter')%>%
+  fitBounds(box_max[1], box_max[2], box_max[3], box_max[4])%>%
+  addPolygons(data = d_clip_adv2, stroke = 0.7, weight = 0.5, color = "white", 
+              opacity = 0.8,
+              fillOpacity = 0.05)%>%
+  addPolygons(data = d_vlg_designations, 
+              color = ~col_pal(TYPE_NAME), 
+              stroke = F, 
+              fillOpacity = 0.85,
+              popup = ~popup,
+              highlightOptions = highlightOptions(
+                stroke = 0.5,
+                weight = 1,
+                color = "white", 
+                bringToFront = T)
+  )%>%
+  addLegend(map = ., pal = col_pal, 
+            values = ~TYPE_NAME, position = "bottomright", 
+            title = "Region Designation")
+
+m
+
+```
+
+### Conclusions
+
+This offers us a great path to quickly viewing a number of different measures visually within the context of the City at a high degree of granularity. However, it implies an understanding of the underlying definitions and component measures to understand the results outlined in the initial [2012 analysis][8].  
+
+In our next post, we'll explore a few more simplistic measures that can help quantify the success or inadequacies of the planning policies. This will not give us the localized degree of understanding, but will at least inform whether the desired outcomes are being attained. We'll utilize: available housing inventory, home prices and average mortgage payment under a vanilla 30-yr fixed-rate mortgage over time to determine whether (or perhaps why), we see the results we do within the map. 
+
+
+
+[1]: https://www.siq-blog.com/2020/01/14/seattle-comprehensive-plan-growth-strategy/ "Previous Post"
+[2]: https://www2.census.gov/geo/pdfs/reference/geodiagram.pdf?# "Census Hierarchy Viz"
+[3]: https://www.jessesadler.com/post/simple-feature-objects/ "sfc exploration"
+[4]: https://walkerke.github.io/2017/06/comparing-metros/ "comparing metro areas"
+[5]: https://rstudio.github.io/leaflet/ "RStudio leaflet intro"
+[6]: https://walkerke.github.io/2017/05/tigris-metros/ "tigris metros"
+[7]: http://data-seattlecitygis.opendata.arcgis.com/search?tags=Planning "sea gov data base"
+[8]: https://www.seattle.gov/Documents/Departments/OPCD/OngoingInitiatives/SeattlesComprehensivePlan/FinalGrowthandEquityAnalysis.pdf#page=13 "sea initial measures"
+
+<!--chapter:end:2020-01-18-seattle-comprehensive-plan-map-part-ii.Rmd-->
+
+---
+title: Seattle Comprehensive Plan - Part III - Progress
+author: ''
+date: '2020-01-26'
+slug: seattle-comprehensive-plan-part-iii-progress
+categories:
+  - Housing
+tags:
+  - R
+  - Seattle
+  - DataViz
+---
+
+### Housing Measures Progress
+
+In our most [recent post][1], we outlined a few less robust measures to evaluate progress related to the City of Seattle's comprehensive planning initiative. We outlined three measures we would track over a time series to determine if the outcomes were as expected based on the recommended policy remedies. These measures are not determinant, but simply provide a comparative view of progress on housing within the context of national measures. 
+
+```{r admin, include=FALSE, echo = T, warning = F, message = F, eval = T}
+
+if(!require(pacman)){
+  install.packages(pacman)
+  require(pacman)
+}
+
+p_load(tidycensus, tigris, tidyverse, purrr, lubridate, stringr, 
+       viridisLite, fs, tools, sf, geojsonsf, 
+       RColorBrewer,  rvest, scales, tidyr, 
+       viridis, tidyquant)
+
+# Set Options - similar to last time, we set Tigris package to download as simple features
+options(scipen = 99)
+options(tigris_class = "sf")
+options(tigris_use_cache = TRUE)
+
+
+f_tract_within_idx <- function(g_lrg, g_clip_idx){
+  within_idx <- map_lgl(g_clip_idx, function(x){
+    if(length(x) == 1){
+      return(TRUE)
+    } else {return(FALSE)}
+  })
+  
+  g_subset <- g_lrg[within_idx,]
+  return(g_subset)
+}
+
+```
+
+### Data Sources
+
+For this post, we'll focus on three different measures at different geographic levels to evaluate progress and/or impediments to the comprehensive planning under way. 
+
+1. Monthly Inventory of Homes for Sale by Metropolitan Area
+  + Zillow Monthly for sale inventory, seasonally adjusted (smoothed)
+  + Zillow Home Sales (seasonally adjusted) The number of homes sold during the given month
+
+2. Estimated Average Monthly Mortgage Payment
+  + Freddie Mac Primary Mortgage Market Survey (30-year fixed rate mortgage)
+  + Zillow Home Value Index (ZHVI)
+  
+3. U.S. Census and Housing and Urban Development - Gross Rent in Dollars 
+
+#### Methodology Notes
+Similar to previous posts, I will not detail out the specific methodologies utilized to generate these data. However, further high-level reading can be done at the following sites: 
+
+1. [Zillow home sales][3]
+2. [Zillow Home Value Index (ZHVI) - Summary Method][4], [Zillow HVI - Deep Dive][5]
+3. [Freddie Mac PMMS][6]
+
+
+In addition, there are a number of "gotchas" when comparing this many data sources, geographies and time intervals. I do not account for a number of these in this particular post given our interest in high-level trending. 
+
+### Load Data from Sources
+
+Similar to other analysis, we will load our data from a variety of sources, compute or aggregated measures and finally plot the data.
+
+1. For Zillow data we will use the readr package from tidyverse to read .csv directly from the Zillow site 
+2. For National figures including Freddie Mac PMMS, we will utilize the tidyquant package previously discussed
+3. For our Gross Rental Census figures, we will leverage tidycensus. In addition, we will use the clipping method outlined in the previous post to aggregate up tract level data to city data
+
+```{r getData, eval=T, echo=T, message=FALSE, results="hide", warning=FALSE, highlight=T, include=T}
+
+# REFERENCE LINKS
+#-----------------------------------------------------------------------
+# 1. Zillow datasets
+# Zillow RegionID = 395078	Zillow RegionName = Seattle, WA
+
+# 1.1 Homes listed
+z_mo_list_url <- "http://files.zillowstatic.com/research/public/Metro/MonthlyListings_SSA_AllHomes_Metro.csv"
+
+# 1.2. Homes Sold
+z_mo_hsale_url <- "http://files.zillowstatic.com/research/public/Metro/Sale_Counts_Seas_Adj_Msa.csv"
+
+# 1.3. Zillow Home Value Index
+z_hvi_url <- "http://files.zillowstatic.com/research/public/Metro/Metro_Zhvi_AllHomes.csv"
+
+# 2. National Tickers (tidyquant)
+#-------------------------------------------------------------------------
+
+# 2.1. Freddie Mac PMMS - 30 year fixed rate mortgage
+pmms_tks <- "MORTGAGE30US"
+
+# 2.2 Month's supply of homes for sale
+
+d_natl_supply <- "MSACSR"
+
+# 2.3. National Median Home Price (homes sold)
+natl_hp_tks <- "MSPUS"
+
+
+# 3. Gross Rent Parameters
+#-------------------------------------------------------------------------
+# 3.1. DP04_0134 = Gross Rent
+
+# 3.2. City of Seattle Geography file for clipping tract data 
+sea_url <- "https://opendata.arcgis.com/datasets/d508083ebd7d444b9997639af845937d_1.geojson"
+
+
+## Load Data
+
+z_filter <- "395078"
+
+d_re_supply <- bind_rows(
+  
+  # Monthly Listings
+  
+  read_csv(z_mo_list_url)%>%
+  filter(RegionID == z_filter)%>%
+  rename(region_nm = RegionName)%>%
+  select(-c(SizeRank, RegionID, RegionType, StateName))%>%
+  gather(dt_full, value, -region_nm)%>%
+  mutate(dt_full = ymd(paste0(dt_full, "-01")), 
+         src_url = z_mo_list_url,
+         src_cite = "Zillow",
+         metric_nm = "mo_listing_z",
+         metric_description = "The count of unique listings 
+         that were active at any time in a given month"),
+  
+  # Monthly Home Sales
+  
+  read_csv(z_mo_hsale_url)%>%
+  filter(RegionID == z_filter)%>%
+  rename(region_nm = RegionName)%>%
+  select(-c(SizeRank,RegionID))%>%
+  gather(dt_full, value, -region_nm)%>%
+  mutate(dt_full = ymd(paste0(dt_full, "-01")), 
+         src_url = z_mo_hsale_url, 
+         src_cite = "Zillow", 
+         metric_nm = "mo_sales_z",
+         metric_description = "The number of homes sold during the given month, 
+         seasonally adjusted using the X-12-Arima method."), 
+)
+
+d_mtg_finance <- bind_rows(
+  
+  # Monthly Zillow-Home-Value-Index Value
+  
+  read_csv(z_hvi_url)%>%
+    filter(RegionID == z_filter)%>%
+    rename(region_nm = RegionName)%>%
+    select(-c(SizeRank,RegionID))%>%
+    gather(dt_full, value, -region_nm)%>%
+    mutate(dt_full = ymd(paste0(dt_full, "-01")), 
+         src_url = z_hvi_url, 
+         src_cite = "Zillow", 
+         metric_nm = "mo_price_est_z",
+         metric_description = " A smoothed, seasonally adjusted measure of the typical home value 
+         and market changes across a given region and housing type"), 
+  
+  # Freddie Mac 30 Year Mortgage Rate from Federal Reserve
+  tq_get(pmms_tks, get = "economic.data", from = "1970-01-01")%>%
+    mutate(dt_full = ymd(paste0(str_sub(date, 0, 8), "01")))%>%
+    group_by(dt_full)%>%
+    summarize(value = mean(price, na.rm = T))%>%
+    ungroup()%>%
+    mutate(region_nm = "National", 
+         src_url = "https://fred.stlouisfed.org/series/MORTGAGE30US", 
+         src_cite = "Freddie Mac", 
+         metric_nm = "avg_frm_30yr", 
+         metric_description = "Lender survey of average 30 year mortgage rates reported weekly.")
+
+)
+
+
+d_mo_inventory <- d_re_supply%>%
+  select(dt_full, metric_nm, value)%>%
+  spread(metric_nm, value)%>%
+  na.omit()%>%
+  mutate(mo_inventory_z = round(mo_listing_z / mo_sales_z, 1))
+
+
+d_natl_supply <- tq_get("MSACSR", get = "economic.data", from="1970-01-01")%>%
+  rename(dt_full = date, mo_inventory_natl =  price)
+
+d_supply_compare <- d_mo_inventory%>%
+  inner_join(., d_natl_supply, by = "dt_full")
+
+d_natl_hp <- tq_get(natl_hp_tks, get = "economic.data", from="1970-01-01")%>%
+    rename(dt_full = date, natl_med_price =  price)
+
+
+d_mtg_compare <- d_mtg_finance%>%
+  select(dt_full, metric_nm, value)%>%
+  mutate(dt_full = as.Date(as.yearqtr(dt_full)))%>%
+  group_by(dt_full, metric_nm)%>%
+  summarize(value = mean(value, na.rm = T))%>%
+  ungroup()%>%
+  spread(metric_nm, value)%>%
+  na.omit()%>%
+  inner_join(., d_natl_hp, by = "dt_full")%>%
+  mutate(avg_pmt_local = (mo_price_est_z*.9)*(avg_frm_30yr/1200)/1-(1 + avg_frm_30yr/1200)^-360, 
+         avg_pmt_natl = (natl_med_price*.9) * (avg_frm_30yr/1200)/1-(1 + avg_frm_30yr/1200)^-360, 
+         zhpi_yoy = round((mo_price_est_z/lag(mo_price_est_z, 4))-1, 2))
+
+d_hpi_natl <- tq_get("CSUSHPINSA", get = "economic.data", from = "1970-01-01")%>%
+  rename(`CS-National HPI`= price)%>%
+  na.omit()
+
+
+yrs_of_interest <- 2014:2018
+
+d_kc_rent <- yrs_of_interest%>%
+  set_names()%>%
+  map(., ~get_acs(geography = "tract", variables = c("median_gross_rent" = "DP04_0134"), 
+                     state = "WA", county = "King", cache_table = T, year = .x, geometry = T, 
+                     survey = "acs5"), .id = "dt_yr")%>%
+  map2(., names(.), ~mutate(.x, dt_yr = .y))%>%
+  do.call("rbind", .)%>%
+  select(dt_yr, NAME, variable, estimate)%>%
+  separate(NAME, sep = ",", into = c("tract_no", "cnty_nm", "state"))%>%
+  mutate(tract_no = str_replace(tract_no, pattern = "Census", ""), 
+         cnty_nm = str_replace(cnty_nm, pattern = "County", ""))%>%
+  unite(geo_nm, sep = "-", c("cnty_nm", "tract_no"))%>%
+  select(dt_yr, geo_nm, estimate)%>%
+  group_by(dt_yr)%>%
+  mutate(median_val = median(estimate, na.rm = T))%>%
+  ungroup()
+
+
+d_sea_muni <- geojson_sf(sea_url)%>%
+  filter(., CITYNAME == "Seattle")%>%
+  st_transform(., st_crs(d_kc_rent))
+
+
+d_idx <- st_within(d_kc_rent, d_sea_muni)
+
+d_sea_rent <- f_tract_within_idx(d_kc_rent, d_idx)%>%
+  group_by(dt_yr)%>%
+  mutate(median_val = median(estimate, na.rm = T))%>%
+  ungroup()
+
+
+```
+
+
+### Plot Data
+
+#### Inventory of Homes for Sale in Months
+
+**About the measure:** This is a common supply side measure used to evaluate the temperature of a real estate market for existing or new home purchasers and sellers. The measure output can be understood as: given the current number of home sales, how many months would it take to sell all of the properties listed (i.e. how much housing stock is available to choose from for prospective buyers). 
+
+**Impact of measure:** Month's of inventory is can be distilled down into two specific output categories based on whether there is a glut of supply (excess supply, relative to demand) or a dearth (scarcity of supply, relative to demand). The measure is generally interpreted within the context of it's relationship to: (i) existing and future home prices; (ii) length of time a listing is available on the market and (iii) whether the actual sales price is below, equal to or above the listed price.
+
+0. Equilibrium (supply=demand): The general industry rule of thumb based on historic data indicate that a measure of 4.5 - 5.5 months is indicative of a housing market in equilibrium. Said simply, when the inventory is at that level -- we do not expect to see upward or downward pressure on home prices, relative to their long-term fundamentals. 
+
+1. Sellers Market (supply < demand): If the month of inventory is below our equilibrium value, we call this a sellers market. The market is termed as such because the lack of available homes for sale puts upward pressure on home prices indicating the higher likelihood that sellers will receive their actual or above listing price.
+
+2. Buyers Market (supply > demand): Conversely, when there are more available homes than buyers (e.g. first time home buyers), those seeking to buy are benefited because they have more options available and thus more bargaining power. 
+
+
+```{r p1Inventory, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align = "center"}
+
+
+d_supply_compare%>%
+  select(dt_full, contains("inventory"))%>%
+  rename(`Seattle Monthly Inventory` = mo_inventory_z, 
+         `National Monthly Inventory` = mo_inventory_natl)%>%
+  gather(variable, value, -"dt_full")%>%
+  ggplot()+
+  geom_bar(stat = "identity", aes(x = dt_full, y = value, group = variable, fill = variable), 
+           position = "dodge")+
+  geom_hline(yintercept = 5.5, linetype = 2, color = "darkred")+
+  scale_fill_viridis_d("")+
+  scale_x_date(date_breaks = "6 months", date_labels = "%Y-%B")+
+  theme_minimal()+
+  labs(title = "Comparing National v. Seattle by Month's Supply of Housing", 
+       subtitle = NULL, 
+       x = NULL, 
+       y = "# of Months", 
+       caption = "Zillow, U.S. Census, Housing and Urban Development")+
+  theme(legend.position = "top", 
+        axis.text.x = element_text(angle = 90))
+
+```
+
+
+#### Average Monthly Mortgage Payment
+
+**About the measure:** Average monthly mortgage payment is utilized for understanding what the estimated monthly housing payment expense would be for a household by utilizing: (i) current average rates (national) and (ii) the current median home price value (by locale). The two largest components of mortgage payments are principal and interest (P+I). There are additional monthly recurring costs such as insurance and taxes, which we will not include here. 
+
+**Impact of measure:** Each of the two inputs has the potential to increase or decrease the average monthly mortgage. Mortgage rates are set by the lending institution based on a multitude of factors and median home prices are driven by supply and demand components. Given the proportion of monthly expense usually associated with shelter (either monthly mortgage or rent), this metric provides a good read on how expensive housing is within a geography. For now we will just evaluate the raw figures, but in future posts we may further unpack some of these concepts. Specifically, what monthly housing expense means relative to wage and income for an area.  
+
+**Note on assumptions:** For our payment calculation, there are a few sets of assumptions beyond the earlier mention that this is not an "all-in" payment amount. In general, the output from our calculations can be presumed to be lower (or more conservative), than the actual monthly mortgage obligation.
+1. We assume a 10% upfront down payment. Despite the anecdote that you should have 20%, that is not and has not been a reality for quite some time. According to the National Association of Realtors (NAR) [most recent survy][7] estimated that 76% of new home buyers put down less than 20%, while 56% of existing home buyers put down less than 20. Zillow has produced similar [survey figures as well][8].
+
+
+```{r p2AmPmt, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align = "center"}
+
+d_mtg_compare%>%
+  select(dt_full, contains("avg_pmt"))%>%
+  rename(`Avg. Pmt Seattle` = avg_pmt_local, `Avg. Pmt National` = avg_pmt_natl)%>%
+  gather(variable, value, -"dt_full")%>%
+  mutate(dt_yr = as.character(year(dt_full)))%>%
+  ggplot()+
+  geom_bar(stat = "identity", aes(x = dt_full, y = value, fill = variable, group = variable), 
+           position = "dodge")+
+  scale_y_continuous(labels = dollar)+
+  scale_x_date(date_breaks = "9 months")+
+  scale_fill_viridis_d("")+
+  theme_minimal()+
+  theme(legend.position = "top", 
+        axis.text.x = element_text(angle = 90))
+
+
+
+```
+
+#### Median Gross Rent (tract aggregated to county and city boundaries)
+
+**About the measure:** The Census conducts frequent surveys in order to evaluate households and individuals on an interim basis between decennial Census surveys. For this post, we'll evaluate gross rents, which combines contract rent (monthly rental expense) and average utilities. 
+
+**Impact of measure:** The previous measures are specific to affordability with respect to existing or prospective homeowners, while median gross rent provides additional details into the monthly housing burden for households renting. 
+
+
+```{r p3RentPlots, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align = "center"}
+
+# Distribution of Gross Rent by Tracts within King county
+ggplot(d_kc_rent, aes(estimate))+
+  geom_histogram(fill = "navy", bins = 60, color = "white")+
+  scale_x_continuous(labels = scales::dollar, breaks = seq(0, 3750,375))+
+  facet_wrap(~dt_yr, ncol = 1)+
+  theme_minimal()+
+  geom_vline(aes(xintercept = median_val, group = dt_yr), lty = "dashed", size = 1, 
+             color = "darkgreen")+
+  geom_text(aes(label = paste0("Median Value: $", prettyNum(median_val, big.mark = ",")), 
+            x = median_val+1000, y = 20))+
+  labs(title = "King County gross rent by tract", 
+       subtitle = "Comparing 2014 to 2018",
+       x = "Monthly Gross Rent ($s)",
+       y = "Tract Cnt",
+       caption = "ACS-5yr Survey, U.S. Census")
+
+# Distribution of Gross Rent by Tracts within Seattle
+
+ggplot(d_sea_rent, aes(estimate))+
+  geom_histogram(fill = "navy", bins = 60, color = "white")+
+  scale_x_continuous(labels = scales::dollar, breaks = seq(0, 3750,375))+
+  facet_wrap(~dt_yr, ncol = 1)+
+  theme_minimal()+
+  geom_vline(aes(xintercept = median_val, group = dt_yr), lty = "dashed", size = 1, 
+             color = "darkgreen")+
+  geom_text(aes(label = paste0("Median Value: $", prettyNum(median_val, big.mark = ",")), 
+                x = median_val+1000, y = 10))+
+  labs(title = "Seattle gross rent by tract", 
+       subtitle = "Comparing 2014 to 2018",
+       x = "Monthly Gross Rent ($s)",
+       y = "Tract Cnt",
+       caption = "ACS-5yr Survey, U.S. Census")
+
+
+```
+
+#### A map for fun...
+
+
+```{r p4RentMaps, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align = "center"}
+
+# Map Tract Data For Seattle
+
+# Create Clean Theme For Map
+theme_map_sq <- function(...){
+  theme_minimal()+
+    theme(
+      text = element_text(family = "Arial Narrow", color = "#22211d"),
+      axis.line = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      # panel.grid.minor = element_line(color = "#ebebe5", size = 0.2),
+      panel.grid.major = element_line(color = "#ebebe5", size = 0.2),
+      panel.grid.minor = element_blank(),
+      plot.background = element_rect(fill = "#f5f5f2", color = NA), 
+      panel.background = element_rect(fill = "#f5f5f2", color = NA), 
+      legend.background = element_rect(fill = "#f5f5f2", color = NA),
+      panel.border = element_blank(),
+      legend.title.align = 0.5, 
+      legend.position = c(0.5, -0.07),
+      legend.box.background = element_rect(fill = NA, color = NA),
+      legend.key = element_rect(color = "transparent", fill = "white"),
+      ...
+    )
+}
+
+# Set Break Length for Clean Categories
+brk_length <- 7
+
+# Create Clean Labels Based on Breaks and Build Map Faceted by ACS Survey Year
+d_sea_rent%>%
+  mutate(brk_value = cut(estimate, pretty(d_sea_rent$estimate, n = brk_length),
+                         dig.lab = 4))%>%
+  separate(brk_value, sep=",", into = c("from", "to"), remove = F)%>%
+  mutate_at(c("from", "to"), 
+            ~str_replace_all(., pattern = "[^[:alnum:]]", "")%>%as.numeric())%>%
+  mutate_at(c("from","to"), ~case_when(
+    . > 999 ~ paste0(as.character(./1000), "K"), 
+    . < 1000 ~ as.character(.)))%>%
+  unite("brk_val_lab", from,to, sep = " to ")%>%
+  mutate(brk_val_lab = factor(brk_val_lab, 
+                              levels = c("0 to 500", "500 to 1K", 
+                                         "1K to 1.5K","1.5K to 2K", 
+                                         "2K to 2.5K", "2.5K to 3K", 
+                                         "3K to 3.5K","3.5K to 4K")))%>%
+  ggplot()+
+  geom_sf(aes(fill = brk_val_lab), color = "white")+
+  theme_map_sq()+
+  theme(legend.position = "bottom")+
+  scale_fill_manual(
+    values = viridis(8, alpha = 0.9), 
+    na.value = "grey60",
+    name = "Gross Rent ($)",
+    guide = guide_legend(
+      direction = "horizontal",
+      keywidth = unit(1.75, "cm"),
+      nrow = 1, 
+      byrow = T,
+      title.position = "top", 
+      label.position = "bottom", 
+      title.hjust = 0.5))+
+  facet_wrap(~dt_yr, nrow = 1)
+
+```
+
+
+#### Observations and Conclusions
+
+* Inventory of homes for sale remains low. Assuming demand remains consistent, we would continue to see minor upward pressure on home prices though there could be leveling off after a long period of it being a "sellers" market
+* Monthly mortgage payments are expensive relative to what is paid nationally. Seattle (and the rest of the nation) has largely benefited from historic lows in interest rates. Despite this trend in interest rates, home sale values still make Seattle an expensive city 
+* Rents have continued to increase over time - particularly from 2014 - 2015, where King County saw median rents nearly double. This trend moderated over time, particularly within Seattle -- though these monthly costs continued to expanded outward spreading the cost more broadly to periphery tracts/neighborhoods. 
+
+[1]: https://www.siq-blog.com/2020/01/18/seattle-comprehensive-plan-map-part-ii/ "Part II Post"
+[2]: https://www.zillow.com/research/data/ "Zillow Data"
+[3]: https://www.zillow.com/research/home-sales-methodology-7733/ "Zillow Home Sales"
+[4]: https://www.zillow.com/research/zhvi-methodology-2019-highlights-26221/ "Zillow HVI, Method Summary"
+[5]: https://www.zillow.com/research/zhvi-methodology-2019-deep-26226 "Zillow HVI, Deep Dive"
+[6]: http://www.freddiemac.com/pmms/about-pmms.html "Freddie Mac PMMS"
+[7]: https://www.nar.realtor/sites/default/files/documents/2019-12-realtors-confidence-index-01-22-2020.pdf#page=5 "NAR Down Payment"
+[8]: https://wp-tid.zillowstatic.com/50/CHTR2019_Buyers_webFINAL-ef2665.pdf#page=2 "Zillow Down Payment"
+
+
+<!--chapter:end:2020-01-26-seattle-comprehensive-plan-part-iii-progress.Rmd-->
+
