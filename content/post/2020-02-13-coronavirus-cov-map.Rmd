@@ -1,0 +1,116 @@
+---
+title: Coronavirus (CoV) Map
+author: Stuart Quinn
+date: '2020-02-13'
+slug: coronavirus-cov-map
+categories:
+  - Health
+  - Economy
+tags:
+  - DataViz
+  - Geo
+  - Map
+  - R
+---
+
+### Quick Coronavirus Map
+
+Coronaviruses are a general family of virus, which affect the respiratory system (the most fatally known being SARS). It is a zoonotic virus meaning that it can infect and be transmitted between humans and animals.  The most recent strain -- 2019-nCoV continues to consume the  news cycle given it's potential to spread quickly and the uncertainty given it has not previously been identified in humans. 
+
+I will not pretend to be an expert on the health risks, strain sequencing or external economic risks it may impose. Though part of understanding complex issues with the potential for geographic spread, lend themselves to the importance of being able to quickly detect geographic transference points, hot spots or emerging contagion. 
+
+Others have built far more sophisticated tools and models for tracking/forecasting such as: 
+
+1. [John Hopkins Center for Systems Science and Engineering][1]
+2. [ShinyApp by John Coene][2]
+
+For our quick map, we'll source recent data from John Hopkins Github for building our map. There are certainly more dynamic ways to do this, but sometimes a quick visualization is all we want....
+
+```{r admin, include=FALSE, echo = T, warning = F, message = F, eval = T}
+
+if(!require(pacman)){
+  install.packages(pacman)
+  require(pacman)
+}
+
+p_load(sf, tools, fs, stringi,
+       leaflet, tidyverse, rgdal, rgeos, tmap, mapview, ggmap,
+       readxl, readr, htmltools, htmlwidgets)
+
+
+# register_google(key = "YOUR_KEY_HERE")
+
+```
+
+
+```{r setup, echo = F, eval = T, warning= F, message=F}
+register_google(key = Sys.getenv("GGMAP_GOOGLE_API_KEY"))
+```
+
+#### Pull in the Data: 
+
+We'll use the Johns Hopkins data available [here][1]. We could simply utilize the pre-geocoded data, but we'll take the hard path to add another tool to our mapping toolbelt. We'll utilize the Google API to reverse geocode the locations based on their name. 
+
+```{r getData, eval=T, echo=T, message=FALSE, results="hide", warning=FALSE, highlight=T, include=T}
+
+# Link to raw data 
+case_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/daily_case_updates/02-13-2020_2115.csv"
+
+# The columns renames
+case_col_nms <- c("prov_state", "cntry_region", "dt_updated", "confirmed", "death", "recovered")
+
+# Load data **note last mutate** which passes the state, country to google's API 
+# ****NOTE***** there is a cost based on usage
+d_case <- read_csv(case_url, col_names = case_col_nms, skip=1)%>%
+  mutate(row_id = row_number())%>%
+  mutate(prov_state = ifelse(is.na(prov_state), "", prov_state), 
+         cbin_st_region = paste(prov_state, cntry_region, sep=","))%>%
+  mutate_geocode(cbin_st_region)
+
+# Create a smaller dataset with just the relevant information to write out to csv to store 
+# d_geo_out <- d_case%>%
+#   select(row_id, cbin_st_region, lon, lat)
+
+#OPTIONAL
+# write_csv(d_geo_out, paste0(d_path, "geo_point_wid.csv"))
+
+```
+
+### Map Data
+
+We'll use leaflet for this plot similar to previous posts. We'll first create our popup text based on the variables aggregated by Johns Hopkins. Based on outbreak figures, we'll set the view to China given the impact thus far ([bounding box coordinates tool][3])
+
+Finally, we'll add some character by utilizing built-in leaflet tiles to get the dramatic black background coloring. A full list of map tile options for leaflet can be found [here][4]
+
+```{r mapData, echo = T, eval = T, warning = F, message = F, include = T, highlight =T, fig.align="center"}
+
+popup_txt <- paste('<b>Region:</b>',d_case$cbin_st_region, '<br>',
+                   '<b>Confirmed:</b>', prettyNum(d_case$confirmed, big.mark=","), '<br>',
+                   '<b>Deaths:</b>',prettyNum(d_case$death, big.mark = ","),'<br>',
+                   '<b>Recovered:</b>', prettyNum(d_case$recovered, big.mark=","),'<br>', 
+                   '<b>LastUpdated:</b>', d_case$dt_updated, '<br>')
+
+
+m <- leaflet(d_case)%>%
+  addProviderTiles("CartoDB.DarkMatter")%>%
+  fitBounds(73.5,8.8,134.8,53.6)%>%
+  addCircleMarkers(
+    radius = ~sqrt(confirmed)/3.5, 
+    stroke = T,
+    weight = 1,
+    color = "white",
+    fillOpacity = .8, 
+    fillColor = "darkred", popup = popup_txt)
+
+m
+
+```
+
+#### That's All for Now
+
+In a few lines of code we have a quick way to navigate geographic occurrences and outcomes by region. Viruses' like these are very scary, given the lack of prior research available and limitations on containment. Assuredly many teams and medical professionals are working around the clock. Hoping everyone remains safe and healthy!
+
+[1]: https://hub.jhu.edu/2020/01/23/coronavirus-outbreak-mapping-tool-649-em1-art1-dtd-health/ "jh-csse"
+[2]: https://shiny.john-coene.com/coronavirus/ "shinyApp tracker"
+[3]: https://boundingbox.klokantech.com/ "bound Box"
+[4]: http://leaflet-extras.github.io/leaflet-providers/preview/ "leaflet tiles"
