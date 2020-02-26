@@ -1,0 +1,628 @@
+---
+title: TidyTuesday Measles Vaccination - 2020-WK9
+author: Stuart Quinn
+date: '2020-02-25'
+slug: tidytuesday-2020-wk9
+categories:
+  - Health
+tags:
+  - TidyTuesday
+  - DataViz
+  - Geo
+---
+
+
+
+<div id="tidytuesday-plot" class="section level3">
+<h3>TidyTuesday Plot</h3>
+<p>If you readers are not familiar with <a href="https://github.com/rfordatascience/tidytuesday" title="TidyTuesday Landing">TidyTuesday</a>…it is a weekly posting of a dataset to allow new and experienced users to flex their skills with R. The data is provided as-is and is meant to allow users to continue to sharpen their skills.</p>
+<p>There are a variety of different data sources for any and all users looking to explore new packages, enhance their skills or show off what they have learned to a broader audience.</p>
+<p>Since the administrators produce extensive descriptions and <a href="https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-02-25" title="Data source and description">sources of the data</a> for reproducible, we’ll keep these posts brief. In addition, they have created a package a package for consuming data in an automated fashion on a weekly basis.</p>
+<p><em>Year:</em> 2020</p>
+<p><em>Week:</em> 09</p>
+<p><em>Dataset:</em> Vaccinations for select schools within the United States</p>
+<div id="pull-in-the-data" class="section level4">
+<h4>Pull in the data</h4>
+<p>First we’ll pull in the data and create some quick summary tables which can be found at the bottom of this post for reference.</p>
+<pre class="r"><code># LOAD DATA
+#--------------------------------------------------------
+dt_yr &lt;- year(Sys.Date())
+dt_wk_no &lt;- week(Sys.Date())
+
+# Read in data which takes the year and week number
+d_in &lt;- tidytuesdayR::tt_load(dt_yr, dt_wk_no)%&gt;%.$measles
+
+# Without setting the data as a variable, a viewer panel will bring up the site details
+# This includes a data dictionary and source of data
+tidytuesdayR::tt_load(dt_yr, dt_wk_no)
+
+# INSPECT DATA
+#------------------------------------------------------------
+
+t1 &lt;- map_df(d_in, ~length(unique(.)))%&gt;%
+  gather(variable, value)%&gt;%
+  kable(., caption = &quot;Unique Values&quot;, format.args = list(big.mark = &quot;,&quot;), format = &quot;html&quot;)
+
+t2 &lt;- map_df(d_in, ~sum(is.na(.)))%&gt;%
+  gather(variable, value)%&gt;%
+  kable(., caption = &quot;Number of NA&#39;s&quot;, format.args = list(big.mark = &quot;,&quot;), format = &quot;html&quot;)
+
+t3 &lt;- d_in%&gt;%
+  select_if(is.numeric)%&gt;%
+  map_df(., ~range(., na.rm=T))%&gt;%
+  gather(variable, value)%&gt;%
+  group_by(variable)%&gt;%
+  mutate(row_id = row_number())%&gt;%
+  ungroup()%&gt;%
+  mutate(variable_cat = ifelse(row_id==1, paste0(variable, &quot;_lo&quot;), paste0(variable, &quot;_hi&quot;)))%&gt;%
+  select(-c(row_id, variable))%&gt;%
+  select(variable_cat, value)%&gt;%
+  kable(., caption = &quot;Range of Numerics&quot;, format = &quot;html&quot;)</code></pre>
+</div>
+</div>
+<div id="clean-and-join-data" class="section level3">
+<h3>Clean and join data</h3>
+<p>We’ll download a few reference spatial files to build out the robustness of the dataset. Then we’ll do a quick viz to understand how we would like to build a plot for the data. Since the TidyTuesday data is in a tidy format, we will need to convert the lat / lng columns to sf for our final plot.</p>
+<pre class="r"><code># 1. Get School District Geom from U.S. Census
+
+d_wa_school &lt;- tigris::school_districts(state = &quot;WA&quot;, year = 2018)
+# glimpse(d_in)
+
+# 2. Convet df to sf object so we have lat long we can compare against Census
+
+d_tt_geo_wa &lt;- d_in%&gt;%
+  filter(state == &quot;Washington&quot;)%&gt;%
+  filter_at(vars(lat, lng), ~any(is.na(.)))%&gt;%
+  mutate_at(vars(lat, lng), ~as.numeric(.))%&gt;%
+  st_as_sf(
+    coords = c(&quot;lng&quot;, &quot;lat&quot;),
+    agr = &quot;constant&quot;, 
+    crs = st_crs(d_wa_school), 
+    stringsAsFactors = F, 
+    remove = T, 
+    na.fail = F)%&gt;%
+  mutate(overall = ifelse(overall &lt; 0, 0, overall))
+
+
+# 3. Get which school points are within which district
+dc_geo_wa &lt;- st_join(d_tt_geo_wa, d_wa_school, join = st_within)%&gt;%
+  mutate(district = NAME)
+
+# 4. Get WA state outline geometry, where 53  = WA state fips2 state code
+
+d_wa &lt;- tigris::states(cb = T)%&gt;%
+  filter(STATEFP == &quot;53&quot;)
+
+
+p1 &lt;- ggplot(d_tt_geo_wa, aes(x = county, y = overall))+
+  ggbeeswarm::geom_quasirandom(aes(color = county), groupOnX = F)+
+  scale_color_viridis_d(&quot;&quot;)+
+  coord_flip()+
+  labs(title = &quot;Total vaccinations by county&quot;, 
+       x = NULL,
+       y = &quot;Overall Vaccinated (%)&quot;)+
+  theme_minimal()+
+  theme(legend.position = &quot;none&quot;)
+
+
+p1</code></pre>
+<p><img src="/post/2020-02-25-tidytuesday-2020-wk9_files/figure-html/cleanData-1.png" width="672" style="display: block; margin: auto;" /></p>
+<div id="our-plot" class="section level4">
+<h4>Our plot</h4>
+<p>Since there are quite a few gaps within the dataset, we will focus on attempting to build a map of median vaccination percent by Washington state school district. Note that we are note keeping a tally, but for clarity – the lower of the overall vaccination should be interpreted as higher potential risk and higher values on the y-axis as an indication of a higher percent of students receiving common vaccinations.</p>
+<p>Our geometry layers will be:</p>
+<ol style="list-style-type: decimal">
+<li><p>State outline for WA (U.S. Census)</p></li>
+<li><p>Add borders for individual school districts (U.S. Census)</p></li>
+<li><p>Map points of individual schools reported in the TidyTuesday dataset</p></li>
+</ol>
+<p>3.1. Facet the plot based on the overall reported vaccination proportion in the dataset</p>
+<pre class="r"><code># Create a base theme for our map 
+theme_map_sq &lt;- function(...){
+  theme_minimal()+
+    theme(
+      title = element_text(family = &quot;Arial&quot;, color = &quot;white&quot;),
+      axis.line = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      # panel.grid.minor = element_line(color = &quot;#ebebe5&quot;, size = 0.2),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.background = element_rect(fill = &quot;#000000&quot;, color = NA), 
+      panel.background = element_rect(fill = &quot;#000000&quot;, color = NA), 
+      panel.border = element_blank(),
+      ...
+    )
+}
+
+# Create breaks for our facet based on observations from our data
+cln_brks &lt;- c(0, 30, 65, 75, 80, 85, 90, 95, 100)
+
+# Create our median aggregation of overall vaccination levels
+# We also do some text cleaning of our breaks for better facet labels
+
+d_agg &lt;- dc_geo_wa%&gt;%
+  select(index, st_name = state, school_name = name, fips2 = STATEFP, 
+        cens_geoid = GEOID, cens_dist_name = NAME, city, county, 
+        enroll, overall, xrel, xmed, xper, geometry)%&gt;%
+  group_by(cens_dist_name)%&gt;%
+  summarize(median_overall = median(overall, na.rm = T))%&gt;%
+  ungroup()%&gt;%
+  mutate(geometry = st_cast(geometry, &quot;POINT&quot;), 
+         brk_facet = cut(median_overall, breaks = cln_brks),
+         brk_facet = str_replace_all(brk_facet, pattern = &quot;\\(|\\]&quot;, &quot;&quot;), 
+         brk_facet = str_replace_all(brk_facet, pattern = &quot;\\,&quot;, &quot; to &quot;))%&gt;%
+  na.omit()
+
+
+
+p2 &lt;- ggplot()+
+  geom_sf(data = d_wa, fill = &quot;#000000&quot;, color = &quot;white&quot;, alpha = 0.85)+
+  geom_sf(data = d_wa_school, fill = &quot;#000000&quot;, color = &quot;white&quot;, alpha = .85)+
+  geom_sf(data = d_agg, aes(geometry = st_jitter(geometry, factor = 0.01)),
+          size = 2, color = &quot;darkred&quot;, fill = &quot;darkred&quot;)+
+  labs(title = &quot;Overall vaccination rates by school district&quot;,
+       subtitle = &quot;United States, Washington State (2018-2019)&quot;,
+       caption = &quot;Date: TidyTuesday, 2020, Wk = 9&quot;,
+       x = NULL, 
+       y = NULL)+
+  facet_wrap(~brk_facet)+
+  theme_map_sq()+
+  theme(legend.position = &quot;none&quot;, 
+        strip.background = element_rect(fill = &quot;white&quot;), 
+        strip.text = element_text(face = &quot;bold&quot;))
+
+
+
+p2</code></pre>
+<p><img src="/post/2020-02-25-tidytuesday-2020-wk9_files/figure-html/mapViz-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="reference-data-inspection-tables" class="section level4">
+<h4>Reference: Data Inspection Tables</h4>
+<pre class="r"><code># Length of distinct variables
+t1</code></pre>
+<table>
+<caption>
+<span id="tab:getData">Table 1: </span>Unique Values
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+variable
+</th>
+<th style="text-align:right;">
+value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+index
+</td>
+<td style="text-align:right;">
+8,066
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+state
+</td>
+<td style="text-align:right;">
+32
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+year
+</td>
+<td style="text-align:right;">
+4
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+name
+</td>
+<td style="text-align:right;">
+36,129
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+type
+</td>
+<td style="text-align:right;">
+7
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+city
+</td>
+<td style="text-align:right;">
+5,666
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+county
+</td>
+<td style="text-align:right;">
+1,159
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+district
+</td>
+<td style="text-align:right;">
+1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+enroll
+</td>
+<td style="text-align:right;">
+967
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+mmr
+</td>
+<td style="text-align:right;">
+4,796
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+overall
+</td>
+<td style="text-align:right;">
+2,691
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xrel
+</td>
+<td style="text-align:right;">
+2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xmed
+</td>
+<td style="text-align:right;">
+1,127
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xper
+</td>
+<td style="text-align:right;">
+1,592
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lat
+</td>
+<td style="text-align:right;">
+44,563
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lng
+</td>
+<td style="text-align:right;">
+44,546
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code># Number of NAs by variable
+t2</code></pre>
+<table>
+<caption>
+<span id="tab:getData">Table 1: </span>Number of NA’s
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+variable
+</th>
+<th style="text-align:right;">
+value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+index
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+state
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+year
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+name
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+type
+</td>
+<td style="text-align:right;">
+36,622
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+city
+</td>
+<td style="text-align:right;">
+20,071
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+county
+</td>
+<td style="text-align:right;">
+6,254
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+district
+</td>
+<td style="text-align:right;">
+66,113
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+enroll
+</td>
+<td style="text-align:right;">
+16,260
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+mmr
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+overall
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xrel
+</td>
+<td style="text-align:right;">
+66,004
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xmed
+</td>
+<td style="text-align:right;">
+45,122
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xper
+</td>
+<td style="text-align:right;">
+57,560
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lat
+</td>
+<td style="text-align:right;">
+1,549
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lng
+</td>
+<td style="text-align:right;">
+1,549
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code># Range of integer variables
+
+t3</code></pre>
+<table>
+<caption>
+<span id="tab:getData">Table 1: </span>Range of Numerics
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+variable_cat
+</th>
+<th style="text-align:right;">
+value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+index_lo
+</td>
+<td style="text-align:right;">
+1.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+index_hi
+</td>
+<td style="text-align:right;">
+8066.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+enroll_lo
+</td>
+<td style="text-align:right;">
+0.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+enroll_hi
+</td>
+<td style="text-align:right;">
+6222.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+mmr_lo
+</td>
+<td style="text-align:right;">
+-1.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+mmr_hi
+</td>
+<td style="text-align:right;">
+100.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+overall_lo
+</td>
+<td style="text-align:right;">
+-1.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+overall_hi
+</td>
+<td style="text-align:right;">
+100.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xmed_lo
+</td>
+<td style="text-align:right;">
+0.04000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xmed_hi
+</td>
+<td style="text-align:right;">
+100.00000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xper_lo
+</td>
+<td style="text-align:right;">
+0.17000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+xper_hi
+</td>
+<td style="text-align:right;">
+169.23000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lat_lo
+</td>
+<td style="text-align:right;">
+24.55327
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lat_hi
+</td>
+<td style="text-align:right;">
+48.99995
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lng_lo
+</td>
+<td style="text-align:right;">
+-124.49686
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lng_hi
+</td>
+<td style="text-align:right;">
+80.20515
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>

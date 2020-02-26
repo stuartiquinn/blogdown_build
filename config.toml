@@ -1,8 +1,8 @@
 baseurl = "/"
 languageCode = "en-us"
-title = "A Hugo website"
+title = "SiQ Blog"
 theme = "hugo-lithium"
-googleAnalytics = ""
+googleAnalytics = "UA-158606301-1"
 disqusShortname = ""
 ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
 
@@ -21,7 +21,7 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     url = "https://twitter.com/stuartiquinn"
 
 [params]
-    description = "A R Blog with Blogdown."
+    description = "An R Blog with Blogdown."
 
     # options for highlight.js (version, additional languages, and theme)
     highlightjsVersion = "9.12.0"
