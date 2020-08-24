@@ -1,0 +1,124 @@
+---
+title: Quick Map - U.S. Unemployment Rate by State
+author: Stuart Quinn
+date: '2020-08-23'
+slug: quick-map-u-s-unemployment-rate-by-state
+categories:
+  - Economy
+tags:
+  - EconViz
+  - R
+  - Map
+  - DataViz
+  - Geo
+---
+
+
+
+<div id="u.s.-unemployment-by-state" class="section level3">
+<h3>U.S. Unemployment by State</h3>
+<pre class="r"><code>if(!require(pacman)){
+  install.packages(&quot;pacman&quot;)
+  require(pacman)
+}
+
+
+p_load(tidyverse, tidyquant, stringr, 
+       lubridate, purrr, lubridate, 
+        tigris, geofacet, ggrepel, ggdark, knitr)</code></pre>
+<div id="about-the-data-and-r-packages" class="section level4">
+<h4>About the data and R packages</h4>
+<p>The <a href="" title="https://www.bls.gov/">U.S. Bureau of Labor Statistics (BLS)</a> tracks monthly unemployment rate(s). Given the frequency of reporting, these figures are generally smoothed over multiple months. Federal policy making offers programs, but these figures can largely be driven by state, county and local economies.</p>
+<p>Due to Covid-19, the unemployment rate spiked dramtically across the United States. In order to track the recovery at a state specific level, I have built a map which utilizes BLS data.</p>
+<p>The workhorse R packages here include: tidyquant (<a href="" title="https://fred.stlouisfed.org/">FRED2 API</a>), geofacet (map visual) and ggdark for thematic coloring/styling of the plot.</p>
+</div>
+<div id="get-the-data" class="section level4">
+<h4>Get the data</h4>
+<ol style="list-style-type: decimal">
+<li>Tigris package to get all state abbreviations from the U.S. Census Bureau</li>
+<li>tidyquant::tq_get for sourcing all states from Federal Reserve Economic Data (FRED2)</li>
+</ol>
+<pre class="r"><code># Get all state abbreviations and then concatenate with standardized
+# Fred2 ticker
+
+st_abb &lt;- tigris::fips_codes%&gt;%
+  group_by(state)%&gt;%
+  filter(row_number()==1)%&gt;%
+  filter(!state %in% c(&quot;AS&quot;, &quot;GU&quot;, &quot;MP&quot;, &quot;PR&quot;, &quot;UM&quot;, &quot;VI&quot;))%&gt;%
+  select(state)%&gt;%
+  pull(.)
+
+tks &lt;- c(paste0(st_abb, &quot;UR&quot;))
+
+
+# Pass tickets to tidyquant API wrapper for Fred2
+# **Note this pulls a lot of data. Montly data by state since 2005
+d_ue &lt;- tidyquant::tq_get(tks, get = &quot;economic.data&quot;, from = &quot;2005-01-01&quot;)%&gt;%
+  mutate(st_abb = str_sub(symbol,0,2))
+
+
+# Get nat&#39;l figures for reference, relative to state UE
+d_natl &lt;- tq_get(&quot;UNRATE&quot;, get = &quot;economic.data&quot;, from = &quot;2020-01-01&quot;)%&gt;%
+  mutate(dt_yr = year(date)%&gt;%as.character())%&gt;%
+  rename(natl_rate = price)
+
+curr_natl_ue &lt;- d_natl%&gt;%
+  slice(which.max(date))</code></pre>
+</div>
+<div id="plot-data-as-a-time-series-map" class="section level4">
+<h4>Plot data as a time-series map</h4>
+<p>Utilizing geofacets we will create a rendering of the U.S. with each state’s specific unemployment rate over time.</p>
+<p>We will first capture the most recent observation by state to include coloring and the value for that period.</p>
+<pre class="r"><code>recent_obs &lt;- d_ue%&gt;%
+  group_by(st_abb)%&gt;%
+  slice(which.max(date))
+
+
+
+p1 &lt;- d_ue%&gt;%
+  ggplot()+
+  geom_line(aes(x = date, y = price))+
+  geom_point(data = recent_obs, 
+             aes(x = date, y = price), 
+             color = &quot;darkred&quot;, size = 2.25, alpha = .8)+
+  ggrepel::geom_text_repel(data = recent_obs, 
+                           aes(x = date, y = price, label = paste0(price, &quot;%&quot;)), 
+                           vjust = -1)+
+  scale_x_date(date_breaks = &quot;3 years&quot;, 
+               labels = function(x) paste0(&quot;&#39;&quot;,str_sub(x,3,4)))+
+  labs(title = &quot;The current state of unemployment in the U.S.&quot;, 
+       subtitle = paste(&quot;Data as of:&quot;, first(recent_obs$date)%&gt;%format(., &quot;%b-%Y&quot;)),
+       caption = &quot;Bureau of Labor Statistics&quot;,
+       x = NULL,
+       y = NULL)+
+  ggdark::dark_theme_classic()+
+  geofacet::facet_geo(~st_abb, grid = &quot;us_state_grid2&quot;)+
+  theme(axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank())
+
+
+p1</code></pre>
+<p><img src="/post/2020-08-23-quick-map-u-s-unemployment-rate-by-state_files/figure-html/mapUE-1.png" width="768" style="display: block; margin: auto auto auto 0;" /></p>
+</div>
+<div id="conclusions" class="section level4">
+<h4>Conclusions</h4>
+<p>Many states have pulled below the national unemployment rate, however, the national rate remains elevated relative to historic/non-recessionary periods. This will continue to cause an impact and remain a drain on the broader economy without further stimulus or jobs programs.</p>
+<pre class="r"><code>curr_natl_ue%&gt;%
+  select(`Last Reported`= date, `Nat&#39;l UE Rate (%)` = natl_rate)%&gt;%
+  knitr::kable(align = &quot;c&quot;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="center">Last Reported</th>
+<th align="center">Nat’l UE Rate (%)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">2020-07-01</td>
+<td align="center">10.2</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
