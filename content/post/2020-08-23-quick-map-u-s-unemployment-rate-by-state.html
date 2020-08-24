@@ -84,7 +84,7 @@ p1 &lt;- d_ue%&gt;%
   ggrepel::geom_text_repel(data = recent_obs, 
                            aes(x = date, y = price, label = paste0(price, &quot;%&quot;)), 
                            vjust = -1)+
-  scale_x_date(date_breaks = &quot;3 years&quot;, 
+  scale_x_date(date_breaks = &quot;4 years&quot;, 
                labels = function(x) paste0(&quot;&#39;&quot;,str_sub(x,3,4)))+
   labs(title = &quot;The current state of unemployment in the U.S.&quot;, 
        subtitle = paste(&quot;Data as of:&quot;, first(recent_obs$date)%&gt;%format(., &quot;%b-%Y&quot;)),
@@ -98,7 +98,7 @@ p1 &lt;- d_ue%&gt;%
 
 
 p1</code></pre>
-<p><img src="/post/2020-08-23-quick-map-u-s-unemployment-rate-by-state_files/figure-html/mapUE-1.png" width="768" style="display: block; margin: auto auto auto 0;" /></p>
+<p><img src="/post/2020-08-23-quick-map-u-s-unemployment-rate-by-state_files/figure-html/mapUE-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
 </div>
 <div id="conclusions" class="section level4">
 <h4>Conclusions</h4>

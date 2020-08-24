@@ -81,7 +81,7 @@ Utilizing geofacets we will create a rendering of the U.S. with each state's spe
 
 We will first capture the most recent observation by state to include coloring and the value for that period. 
 
-```{r mapUE, eval = T, echo = T, warning = F, message = F, highlight = T, fig.align = "left", fig.height = 8, fig.width = 8}
+```{r mapUE, eval = T, echo = T, warning = F, message = F, highlight = T, fig.align = "left", fig.height = 8, fig.width = 11}
 
 recent_obs <- d_ue%>%
   group_by(st_abb)%>%
@@ -98,7 +98,7 @@ p1 <- d_ue%>%
   ggrepel::geom_text_repel(data = recent_obs, 
                            aes(x = date, y = price, label = paste0(price, "%")), 
                            vjust = -1)+
-  scale_x_date(date_breaks = "3 years", 
+  scale_x_date(date_breaks = "4 years", 
                labels = function(x) paste0("'",str_sub(x,3,4)))+
   labs(title = "The current state of unemployment in the U.S.", 
        subtitle = paste("Data as of:", first(recent_obs$date)%>%format(., "%b-%Y")),
