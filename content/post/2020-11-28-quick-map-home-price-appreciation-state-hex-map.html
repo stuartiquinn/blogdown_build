@@ -1,0 +1,183 @@
+---
+title: Quick Map - Home Price Appreciation State Hex Map
+author: Stuart I. Quinn
+date: '2020-11-28'
+slug: quick-map-home-price-appreciation-state-hex-map
+categories:
+  - Economy
+  - Housing
+  - R
+tags:
+  - DataViz
+  - Geo
+  - R
+  - Housing
+  - Home Prices
+---
+
+
+
+<div id="u.s.-home-price-year-over-year-change-by-state" class="section level3">
+<h3>U.S. Home Price Year-over-Year Change by State</h3>
+<p>Home prices are an important measure of the housing economy and influenced by supply and demand measures as outlined in a <a href="" title="https://www.siq-blog.com/2020/01/26/seattle-comprehensive-plan-part-iii-progress/">previous post</a>. Multiple companies utilize models and aggregated home price indexes (hpi) to estimate the change in home prices over time. Since the purpose of this post is for a quick hexagon map tutorial, we’ll come back to the different methods and varieties of home price indexes.</p>
+<div id="about-the-data-and-r-packages" class="section level4">
+<h4>About the data and R packages</h4>
+<p>For this post we’ll utilize two different datasets:</p>
+<ol style="list-style-type: decimal">
+<li>The Freddie Mac Home Price Index by state <a href="" title="http://www.freddiemac.com/research/indices/house-price-index.page">(available here)</a></li>
+<li>The geographic data (geojson) is sourced from a post by <a href="%22https://andrewxhill.com/">Andrew Hill</a> on CartoDB <a href="" title="https://team.carto.com/u/andrew/tables/andrew.us_states_hexgrid/public/map">(available here)</a></li>
+</ol>
+<p>I use this home price data from Freddie Mac often, so I have a simplistic function I use to consume the posted file and generate a long time-series. The function also calculates: (1) month-over-month home-price change by state; (2) year-over-year home price change.</p>
+<p>For the geographic file, we’ll be using the geojsonio and rgeos package. Finally, we’ll be using tidyverse for general cleaning and plotting of the map (with some additional thematic packages for the aesthetic of the maps)</p>
+</div>
+<div id="get-the-data" class="section level4">
+<h4>Get the data</h4>
+<p>We’ll only be utilizing the most recent period of observations. However, we’ll create cut groupings for both the full data set (from 1975) and the most recent reportable period.</p>
+<p><strong>Freddie Mac HPI data</strong></p>
+<ol style="list-style-type: decimal">
+<li><p>Define grouping cuts to categorize the numeric data of home price appreciations (both current period and full dataset)</p></li>
+<li><p>Import data using our function and then a subset of data for the most recent period <em>NOTE:this will download a tempfile to your local directory</em></p></li>
+</ol>
+<p><strong>Hex map geojson data</strong>
+This data can be pulled in via <a href="" title="https://raw.githubusercontent.com/Z3tt/TidyTuesday/master/plots/2020_38/2020_38_KidSpendings.png">API</a>, however, I have stored it locally and imported it. Then we build a couple of different datasets:</p>
+<ol style="list-style-type: decimal">
+<li><p>Read in full dataset from local directory (see fname_geo defined above)</p></li>
+<li><p>Convert to spatial polygon data frame with the <em>broom</em> package</p></li>
+<li><p>Get the centroid of each hexagon (state) and then join the dataset with our Freddie Mac data set. This will be used for adding labels to the plot</p></li>
+<li><p>We take the initial imported dataset and create a “buffer” of the hexagon which gives it the appearance of clipping. This is so we can give the illusion of a highlighted hexagon for each state. (<a href="" title="https://raw.githubusercontent.com/Z3tt/TidyTuesday/master/plots/2020_38/2020_38_KidSpendings.png">see inpiration here</a>)</p></li>
+</ol>
+<pre class="r"><code># Cuts for full dataset
+cut_numeric &lt;- c(-Inf, -20, -10, -5, 0, 5, 10, 15, 20, +Inf)
+cut_lab &lt;- c(&quot;Declined &gt; 20%&quot;, &quot;20 to 10 % Decline&quot;, &quot;9 to 5% Decline&quot;, 
+             &quot;4 to 0% Decline&quot;, &quot;1 to 5% Increase&quot;, &quot;6 to 10% Increase&quot;, 
+             &quot;11 to 15% Increase&quot;, &quot;16 to 20% Increase&quot;, &quot;21%+ Increase&quot;)
+
+# Desired cuts for the most recent period         
+cut_numeric_curr &lt;- c(-5, 0, 3.5, 4.5, 6.5, 7.5, 8.5, 10, +Inf)
+cut_lab_curr &lt;- c(&quot;Decrease in Home Prices&quot;, &quot;Increase 0 to 3.5%&quot;, 
+                  &quot;Increase 3.6 to 4.5%&quot;, &quot;Increase 4.6 to 6.5%&quot;, 
+                  &quot;Increase 6.6 to 7.5%&quot;, &quot;Increase 7.6 to 8.5%&quot;, 
+                  &quot;Increase 8.6 to 10%&quot;, &quot;10%+ Increase&quot;)
+
+
+d_fre_full &lt;- get_fre_state_hpi()%&gt;%
+  mutate(hpa_yoy_lab = round(hpa_yoy*100, 1))%&gt;%
+  filter(!is.na(hpa_yoy_lab))%&gt;%
+  mutate(hpa_yoy_cut = cut(hpa_yoy_lab, breaks = cut_numeric, 
+                           labels = cut_lab, 
+                    include.lowest = T, ordered = T))
+
+d_fre_curr &lt;- d_fre_full%&gt;%
+  group_by(state_abb)%&gt;%
+  filter(date == max(date, na.rm = T))%&gt;%
+  ungroup()%&gt;%
+  mutate(hpa_curr_cut = cut(hpa_yoy_lab, breaks = cut_numeric_curr, 
+                            labels = cut_lab_curr, 
+                            include.lowest = T, ordered = T))%&gt;%
+  dplyr::select(-hpa_yoy_cut)
+
+
+# Read in data from local source: directory, filename, filetype
+d_geo_hex &lt;- geojsonio::geojson_read(fname_geo, 
+  what = &quot;sp&quot;)
+
+# Fortify to spatial df
+d_geo_hex_fortified &lt;- broom::tidy(d_geo_hex, region = &quot;iso3166_2&quot;)
+
+# Get centerpoint for mapping
+d_geo_centroid &lt;- d_geo_hex%&gt;%
+  rgeos::gCentroid(., byid = T)%&gt;%
+  data.frame(., state_abb = d_geo_hex@data$iso3166_2)%&gt;%
+  cbind.data.frame(.)%&gt;%
+  left_join(., dplyr::select(d_fre_curr, state_abb, hpa_yoy_lab, hpa_curr_cut), 
+            by = c(&quot;state_abb&quot; = &quot;state_abb&quot;))%&gt;%
+  mutate(hpa_yoy_lab = paste0(hpa_yoy_lab, &quot;%&quot;))
+
+
+# Create a buffer for the hexagon shapes.
+# This will be used for our dark theme plot. This creates the 
+# appearance of clipping the hexagon without actually doing so
+d_fre_hex_reduce &lt;- d_geo_hex%&gt;%
+  rgeos::gBuffer(., width = -.15, byid = T)%&gt;%
+  broom::tidy(., region = &quot;iso3166_2&quot;)%&gt;%
+  left_join(., d_fre_curr, by = c(&quot;id&quot;=&quot;state_abb&quot;))
+
+# Get latest observation which we use for the subtitle of our plot
+data_as_of &lt;- max(d_fre_full$date, na.rm = T)</code></pre>
+</div>
+<div id="plot-data-as-a-hexmap" class="section level4">
+<h4>Plot data as a hexmap</h4>
+<p>We’re going to build two different plots, which utilize the same label data. The difference is the dark and light aesthetic. The former requires a the “buffer” clipping performed (see env. variable d_fre_hex_reduce)</p>
+<p><strong>Light Theme Plot</strong></p>
+<pre class="r"><code>p1 &lt;- ggplot()+
+  geom_map(data = d_geo_hex_fortified, map = d_geo_hex_fortified, 
+           aes(x = long, y=lat, map_id = id), 
+           color = &quot;white&quot;, size = 0.7) +
+  geom_map(data = d_fre_curr, map = d_geo_hex_fortified, 
+           aes(fill = hpa_curr_cut, map_id = state_abb))+
+  geom_map(data = d_fre_curr, map = d_geo_hex_fortified, 
+           aes(map_id = state_abb), 
+           fill = &quot;transparent&quot;, color = &quot;white&quot;, 
+           show_guide = F)+
+  geom_text(data = d_geo_centroid, aes(x = x, y = y, label=state_abb), 
+            color = &quot;white&quot;, size = 3.95, fontface = &quot;bold&quot;, 
+            nudge_y = .66)+
+  geom_text(data = d_geo_centroid, aes(x = x, y = y, label = hpa_yoy_lab), 
+            color = &quot;white&quot;, size = 3, fontface = &quot;bold&quot;, 
+            nudge_y = -.66, 
+            nudge_x = .2)+
+  labs(title = &quot;State year-over-year home price appreciation (%)&quot;, 
+       subtitle = paste0(&quot;Data as of: &quot;, data_as_of),
+       caption = &quot;Freddie Mac, HPI&quot;,
+       x = NULL, 
+       y = NULL)+
+    coord_map()+
+  theme_hex_map_sq()
+
+p1</code></pre>
+<p><img src="/post/2020-11-28-quick-map-home-price-appreciation-state-hex-map_files/figure-html/lightThemeViz-1.png" width="864" /></p>
+<p><strong>Dark Theme Plot</strong></p>
+<pre class="r"><code>p2 &lt;- ggplot()+
+  geom_polygon(data = d_fre_hex_reduce, 
+               aes(x = long, y = lat, group = id, color = hpa_curr_cut), 
+               fill = &quot;grey9&quot;, size = 2.4)+
+  geom_polygon(data = d_geo_hex_fortified, 
+               aes(x = long, y = lat, group = id), 
+               color = &quot;white&quot;, fill = &quot;transparent&quot;, size = 0.85)+
+  geom_text(data = d_geo_centroid,  
+            aes(x = x, y = y, label = state_abb, color = hpa_curr_cut), 
+            size = 3.5, fontface = &quot;bold&quot;, nudge_y = 0.66, show.legend = F)+
+  geom_text(data = d_geo_centroid,  
+            aes(x = x, y = y, label = hpa_yoy_lab),color = &quot;white&quot;, 
+            size = 2.85, fontface = &quot;bold&quot;, 
+            nudge_y = -0.5, nudge_x = 0.2, show.legend = F)+
+  labs(title = &quot;State year-over-year home price appreciation (%)&quot;, 
+       subtitle = paste0(&quot;Data as of: &quot;, data_as_of),
+       caption = &quot;Freddie Mac, HPI&quot;,
+       x = NULL, 
+       y = NULL)+
+  coord_map()+
+  ggdark::dark_theme_classic()+
+  theme(
+    plot.title=element_text(face=&quot;bold&quot;, hjust=0, size=14), 
+    panel.border=element_blank(), 
+    line = element_blank(), 
+    axis.ticks=element_blank(), 
+    axis.text=element_blank(), 
+    legend.position=c(0.5, .92), 
+    legend.direction=&quot;horizontal&quot;,
+    legend.background = element_rect(fill = &quot;transparent&quot;, color = &quot;white&quot;),
+    legend.title = element_blank(), 
+    legend.text = element_text(face = &quot;bold&quot;)
+  )
+
+  
+p2</code></pre>
+<p><img src="/post/2020-11-28-quick-map-home-price-appreciation-state-hex-map_files/figure-html/darkThemeViz-1.png" width="864" /></p>
+</div>
+<div id="conclusions" class="section level4">
+<h4>Conclusions</h4>
+<p>This vizualization implies continued upward pressure on home prices in aggregate. As previously discussed, the key driver of this upward trend remains to be: (i) low interest rates; (ii) limited supply (listings of for sale properties). Next post, we’ll look at graphing demographics for a sense of impact on how this potentially contributes to increased demand (while supply remains low).</p>
+<p>For context, the historicaly (pre-2007) average year-over-year home price was 2.5 - 3.5% (after adjusting for inflation). Assuming a 2% rate of inflation (though it has been much lower recently), any state with a year-over-year rate &gt; 5.0% would indiciate a higher appreciation than average appreciation. Currently, only North Dakota and Hawaii are experiencing levels below historic averages. These recent results may be indicative of increased Covid cases (ND) and reduced investment purchases (HI), but are worth watching for those particular states.</p>
+</div>
+</div>
