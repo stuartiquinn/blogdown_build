@@ -1,0 +1,209 @@
+---
+title: More Housing Questions for 2021
+author: ''
+date: '2021-01-04'
+slug: more-housing-questions-for-2021
+categories:
+  - Demographics
+  - Housing
+  - Economy
+tags:
+  - DataViz
+  - Housing
+  - R
+  - tidyquant
+---
+
+
+
+<div id="more-housing-questions-than-answers." class="section level3">
+<h3>More Housing Questions Than Answers….</h3>
+<p>What better time than the New Year to take in a longer gaze (both backward and forwards)? Rather than giving a new take or angle on excessively gamed scenarios such as the U.S. Elections or Covid-19, I’ll raise a couple of 21st century structural questions in housing that I am yet to find a compelling response to. For now, just more questions than answers.</p>
+<div id="data-sources-inspiration-for-visuals-below" class="section level4">
+<h4>Data sources &amp; inspiration for visuals below:</h4>
+<ol style="list-style-type: decimal">
+<li>U.S. Census &amp; Appropriated Agencies - Population Estimates by Age <a href="https://www.census.gov/newsroom/press-kits/2020/2020-demographic-analysis.html">Link to most recent survey</a></li>
+</ol>
+<ul>
+<li><a href="http://lenkiefer.com/2019/05/05/population-growth-and-house-prices-2010-to-2018/">Len Kiefer Freddie Mac - Population Growth and House Prices 2010 - 2018</a></li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>U.S. Census - Geographic Mobility (<a href="https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/time-series/historic">All-Files</a>, <a href="https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/time-series/historic/tab-a-1.xls">FileUsed (A-1)</a>)</li>
+</ol>
+<ul>
+<li><a href="https://www.economist.com/leaders/2012/07/21/the-great-slowdown">The Economist - The great slowdown</a></li>
+<li><a href="https://www.brookings.edu/blog/the-avenue/2020/12/15/just-before-covid-19-american-migration-hit-a-73-year-low/">Brookings Institute - William Frey</a></li>
+</ul>
+<ol start="3" style="list-style-type: decimal">
+<li>U.S. Average Primary Mortgage Market Rates (PMMS) - <a href="http://www.freddiemac.com/pmms/data.html">Freddie Mac PMMS</a></li>
+</ol>
+<ul>
+<li><a href="https://www.urban.org/sites/default/files/publication/92241/july_chartbook_final2.pdf">Laurie Goodman - Urban Institute Housing Finance Policy Center (HFPC)</a></li>
+<li><a href="http://lenkiefer.com/2018/07/07/mortgage-rates-in-the-21st-century/">Len Kiefer - Freddie Mac - Rate Spreads</a></li>
+</ul>
+<ol start="4" style="list-style-type: decimal">
+<li>National Association of Realtors (NAR) - <a href="https://www.nar.realtor/sites/default/files/documents/2020-generational-trends-report-03-05-2020.pdf">Realtors Confidence Index (c)</a></li>
+</ol>
+<ul>
+<li><a href="https://libertystreeteconomics.newyorkfed.org/2019/04/a-better-measure-of-first-time-homebuyers.html">FRBNY - Liberty Street Economics (blog)</a></li>
+</ul>
+<p><strong>NOTE</strong> The majority of these data are dated as we are looking at longer term trends. Much of the data was captured, tabulated and reported prior to full impact of Covid-19 and restriction policies being put in place. Therefore, the data mayb be subject to substantial revisions and/or changes within subsequent releases.</p>
+<pre class="r"><code>if(!require(pacman)){
+  install.packages(&quot;pacman&quot;)
+  require(pacman)
+}
+
+p_load(tidyquant, tidyverse, lubridate, purrr,
+       tools, fs, scales, readr, readxl, 
+       ggdark, colorspace, crayon)
+
+# Set filepath for where local data is stored. 
+# This includes the Age demographic data and proportion of first time homebuyers
+
+data_path &lt;- &quot;../../static/data/mtg_2021/&quot;
+
+
+# Set colors that will be used for plots near the end
+
+col_point_line_charts &lt;- colorspace::sequential_hcl(palette = &quot;Dark Mint&quot;, n = 1)[1]
+fill_fthb &lt;- colorspace::sequential_hcl(palette = &quot;Dark Mint&quot;, n = 3)[c(1,2)]</code></pre>
+</div>
+<div id="questions-positive-view-v.-negative-view-with-graphs" class="section level4">
+<h4>Questions: positive view v. negative view with graphs</h4>
+<p><strong>1. What does the composition of the age demographics of the population mean for housing going forward?</strong></p>
+<p><strong>+</strong> <a href="https://www.pewresearch.org/fact-tank/2020/04/28/millennials-overtake-baby-boomers-as-americas-largest-generation/">Millennial’s</a>, particularly those children of the baby boom era continue to suggest ongoing high demand for new home purchases. Those aged 27 as of 2018 (i.e. presently 29) are 4.81 million individuals who will continue to drive demand as they form households and look to purchase homes (if they have not already). As of 2019, the median age of first-time home buyers (FTHB) is estimated to be 33 by the <a href="https://www.bloomberg.com/news/articles/2019-11-08/young-homebuyers-vanish-from-u-s-as-median-purchasing-age-jumps">National Association of Realtors (NAR)</a>.</p>
+<p><strong>-</strong> Despite this demographic tailwind, first-time home buyers (FTHB) continue to remain lower than expected relative to demand (see more below)</p>
+<p><strong>-</strong> The pandemic and <a href="https://www.calculatedriskblog.com/2020/12/update-framing-lumber-prices-up-50-year.html">higher costs to build</a> is likely to continue to put negative pressure on prospective entrants to the purchase market.</p>
+<pre class="r"><code># p_fthb_pop_lab &lt;- filter(d_pop_sub, age == 27 | age == 32)%&gt;%
+#   mutate(lab_txt = ifelse(age == 27, &quot;Largest population by age&quot;, 
+#                           &quot;Median age - first time homebuyer&quot;))
+
+p_pop_fthb &lt;- d_pop_sub%&gt;%
+  ggplot(.)+
+  geom_bar(aes(x = age, y = value_millions, fill = generation_name), 
+           stat = &quot;identity&quot;,alpha = 0.7, size=0.1)+
+  scale_fill_discrete_sequential(&quot;Dark Mint&quot;, 
+                                 guide = guide_legend(
+                                   direction = &quot;horizontal&quot;,
+                                   label.position = &quot;top&quot;, 
+                                   title = &quot;&quot;, 
+                                   reverse = T, 
+                                   keywidth = unit(1.5, &quot;cm&quot;)))+
+  scale_color_manual(values = c(&quot;black&quot;), guide = FALSE)+
+  scale_x_continuous(labels = seq(18,85,3), 
+                     breaks = seq(18,85,3))+
+  scale_y_continuous(breaks = seq(0,5,.5), 
+                     labels = function(x) paste0(x, &quot;M&quot;))+
+  labs(title = &quot;U.S. population by age as of 2018&quot;,
+       subtitle = NULL, 
+       x = &quot;Age&quot;,
+       y= &quot;Population (M)&quot;,
+       caption = NULL)+
+  ggdark::dark_theme_minimal()+
+  theme(legend.position = &quot;top&quot;)
+
+
+p_pop_fthb</code></pre>
+<p><img src="/post/2021-01-04-more-housing-questions-for-2021_files/figure-html/figDemographics-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
+<p><strong>2. What does the secular trend in declining mobility within the U.S. mean for the future of owner-occupied housing?</strong></p>
+<p><strong>+</strong> Mobility and movement creates the opporutnity for more transactions of new and existing home sales. Demographic trends may provide a positive impact to this trend as:
+1. Younger generations coming of age (28-35 year old’s) consider moves from cities to suburbs for lifestyle reasons (better school district, more affordable cost/sq. ft. for growing families, etc.) or reduction in usage of amenities (under pandemic conditions or otherwise)
+2. Likewise, older generations (baby-boomers) may downsize as children leave the home, maintenance and accessibility are not accommodating to their age or retirement enables a desired move (e.g. to warmer climates).</p>
+<p><strong>-</strong> Increased remote work and digitally enabled careers further reduces the proportion of the population needing to relocate for work</p>
+<p><strong>-</strong> Low inventory in homes available for sale make the prospects or interest of moving less desirable when purchaser’s feel they would be over-stretched financially and hold out until more listings are available.</p>
+<p>In the event mortgage rates begin to rise, those with existing mortgages have a further disincentive to move if they have capitalized on historic lows in mortgage rates.</p>
+<pre class="r"><code># Get label for most recent reporting period
+mobility_lab_curr &lt;- d_mobility_pct_sub%&gt;%
+  slice(which.max(xlab_end_date))
+  
+p_mobility &lt;- d_mobility_pct_sub%&gt;%
+  ggplot(aes(x = xlab_end_date, y = tot_move))+
+  geom_line(size = 1.33, color = &quot;white&quot;)+
+  geom_point(data = mobility_lab_curr, aes(x = xlab_end_date, y = tot_move), 
+             size = 4.25, alpha = 0.85,
+             fill = col_point_line_charts, color = col_point_line_charts)+
+  geom_text(data = mobility_lab_curr, 
+             aes(x = xlab_end_date, y = tot_move, 
+                 label = paste0(tot_move,&quot;%&quot;)), 
+             color = &quot;white&quot;, vjust = -1, hjust = -.025, fontface = &quot;bold&quot;)+
+  scale_y_continuous(limits = c(0,25), breaks = seq(0,25, 2), 
+                     labels = function(y) paste0(y, &quot;%&quot;))+
+  scale_x_date(date_breaks = &quot;5 years&quot;, date_labels = &quot;%Y&quot;)+
+  labs(title = &quot;Mobility in the US&quot;, 
+       subtitle = &quot;Technologically mobile, depressing real mobility&quot;, 
+       x= &quot;End of survey year (Mar-YY)&quot;, 
+       y= &quot;% moved in last year&quot;, 
+       caption = &quot;U.S. Census Bureau \n **Note survey ends in March (pre-Covid for 2020)&quot;)+
+  theme_minimal()+
+  dark_theme_minimal()
+
+
+p_mobility</code></pre>
+<p><img src="/post/2021-01-04-more-housing-questions-for-2021_files/figure-html/figMobility-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
+<p><strong>3. How many people will be priced out if mortgage finance rates begin to elevate?</strong></p>
+<p>The post Great Recession period of low interest rates has been beneficial to housing, particularly existing mortgage holders eligible for refinancing. However, many have not been able to capitalize on the more affordable rates due to economic factors (unemployment during the Great Recession or Covid-19). In recent years, increased home prices and <a href="https://www.jchs.harvard.edu/cost-burdens-rise-middle-income-households-most-metros">soaring rents</a> likely contributed in diminishing the benefits of low rates contribution to mortgage affordability.</p>
+<pre class="r"><code>rate_lab_curr &lt;- d_rate_natl%&gt;%
+  select(dt_full = date, mtg30_yr_frm)%&gt;%
+  slice(which.max(dt_full))
+
+p_rate &lt;- select(d_rate_natl, dt_full = date, mtg30_yr_frm)%&gt;%
+  mutate(dt_yr = year(dt_full)%&gt;%as.numeric(), 
+         mo_num = month(dt_full)%&gt;% as.numeric(), 
+         mo_abb = month.abb[mo_num])%&gt;%
+  filter(dt_yr &gt; 1999)%&gt;%
+  ggplot(.)+
+  geom_line(aes(x = dt_full, y = mtg30_yr_frm), size = 1.33)+
+  geom_point(data = rate_lab_curr, aes(x = dt_full, y = mtg30_yr_frm), 
+             size = 4.25, alpha = 0.85,
+             fill = col_point_line_charts, 
+             color = col_point_line_charts)+
+  geom_text(data = rate_lab_curr, 
+            aes(x = dt_full, y = mtg30_yr_frm, 
+                label = paste0(mtg30_yr_frm,&quot;%&quot;)), 
+            color = &quot;white&quot;, vjust = 1.75, fontface = &quot;bold&quot;)+
+  scale_x_date(date_breaks = &quot;9 months&quot;, date_labels = &quot;%b-%Y&quot;)+
+  scale_y_continuous(breaks = seq(0,9,1.25), labels = function(y) paste0(y,&quot;%&quot;), 
+                     limits = c(0,9))+
+  labs(title = &quot;Longterm secular trend in low-interest rates&quot;, 
+       subtitle = &quot;30-Year fixed rate mortgage&quot;, 
+       x = NULL, 
+       y = NULL,
+       caption = &quot;Freddie Mac, PMMS&quot;)+
+  dark_theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45))
+
+p_rate</code></pre>
+<p><img src="/post/2021-01-04-more-housing-questions-for-2021_files/figure-html/figRates-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
+<p><strong>4. Will the proportion of first-time home buyers (FTHB) increase in-line with demographic trends?</strong></p>
+<p><strong>+</strong> Given the positive demographic trends and lower rate environment – a future increase in available inventory of homes for sale could quickly lead to strong demand for new first-time home buyers.</p>
+<p><strong>-</strong> As expected, the rate shrunk after the Great Recession, yet the sustained lower proportion of first-time home buyers has persisted longer than expected.</p>
+<p><strong>-</strong> Economic uncertainty under Covid-19 has the potential to further stem growth and home-purchases by new entrants.</p>
+<pre class="r"><code>p_fthb &lt;- d_fthb_pct%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = dt_yr, y = value, group = name, fill = name), 
+           position = &quot;stack&quot;)+
+  geom_text(aes(x = dt_yr, y = value, group = name, 
+                label = paste0(round(value*100,0),&quot;%&quot;)), 
+            position = position_stack(vjust = .5), 
+            angle = 90, color = &quot;white&quot;)+
+  scale_y_continuous(labels = percent)+
+  scale_x_continuous(breaks = seq(2000,2019,1))+
+  scale_fill_manual(values = fill_fthb, 
+                    guide = guide_legend(
+                                     direction = &quot;horizontal&quot;,
+                                     label.position = &quot;top&quot;, 
+                                     title = &quot;&quot;, 
+                                     reverse = T, 
+                                     keywidth = unit(1.5, &quot;cm&quot;)))+
+  labs(title = &quot;First-time homebuyers (fthb) share remains unimpressive&quot;, 
+       x = NULL, 
+       y = &quot;% first-time purchase&quot;,
+       caption = &quot;National Association of Realtors (NAR)&quot;)+
+  dark_theme_minimal()+
+  theme(legend.position = &quot;top&quot;, 
+        axis.text.x = element_text(angle = 90))
+  
+p_fthb</code></pre>
+<p><img src="/post/2021-01-04-more-housing-questions-for-2021_files/figure-html/figFTHB-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
+</div>
+</div>
