@@ -32,7 +32,7 @@ What better time than the New Year to take in a longer gaze (both backward and f
   + [FRBNY - Liberty Street Economics (blog)][11]
   
 
-**NOTE** The majority of these data are dated as we are looking at longer term trends. Much of the data was captured, tabulated and reported prior to full impact of Covid-19 and restriction policies being put in place. Therefore, the data mayb be subject to substantial revisions and/or changes within subsequent releases. 
+**NOTE** The majority of these data are dated as we are looking at longer term trends. Much of the data was captured, tabulated and reported prior to full impact of Covid-19 and restriction policies being put in place. Therefore, the data may be subject to substantial revisions and/or changes within subsequent releases. 
 
 ```{r adminSetup, echo = T, eval = T, warning = F, message = F, highlight = T}
 
