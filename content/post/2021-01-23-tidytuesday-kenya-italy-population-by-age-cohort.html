@@ -1,0 +1,186 @@
+---
+title: TidyTuesday - Kenya & Italy Population by Age Cohort
+author: Stuart Quinn
+date: '2021-01-23'
+slug: tidytuesday-kenya-italy-population-by-age-cohort
+categories:
+  - Demographics
+  - R
+tags:
+  - EuroStat
+  - R
+  - TidyTuesday
+---
+
+
+
+<div id="tidytuesday-week-4---2021" class="section level3">
+<h3>TidyTuesday Week 4 - 2021</h3>
+<p>The recent TidyTuesday (tt) data set introduces a new package containing Kenya specific Census demographic data (<a href="" title="https://www.siq-blog.com/2020/02/25/tidytuesday-2020-wk9/">see previous post on TidyTuesday</a>). I have not been keeping up with posts for TidyTuesday, but this data provided an interesting data set and a reminder of previous inspiration from my <a href="" title="https://www.siq-blog.com/2019/01/21/visualization-practice-in-r-economist-replication/">Economist project</a>.</p>
+<p>Code and visual for both below.</p>
+<pre class="r"><code>if(!require(pacman)){
+  install.packages(&quot;pacman&quot;)
+  library(pacman)
+}
+
+p_load(tidyverse, scales, ggdark, 
+       tidytuesdayR, readr, lubridate, 
+       devtools, here, fs, rKenyaCensus)
+
+# devtools::install_github(&quot;Shelmith-Kariuki/rKenyaCensus&quot;)
+# library(rKenyaCensus)
+# data(DataCatalogue)
+# tt_datasets(2021)
+
+# **Note** we do NOT actually use any of the provided files, but use a different
+# dataset from the package
+
+# get_data_of_interest &lt;- function(x){
+#       d_in_all &lt;- tidytuesdayR::tt_load(2021, week = 4)
+# 
+#       list2env(lapply(d_in_all, as.data.frame.list), .GlobalEnv)
+#       print(glimpse(crops))
+#       print(glimpse(gender))
+#       print(glimpse(households))
+# 
+# }
+# get_data_of_interest()
+
+# kenya_pop_url &lt;- &quot;https://github.com/Shelmith-Kariuki/rKenyaCensus/blob/master/data/V1_T2.3.rda?raw=true&quot;</code></pre>
+<div id="read-in-tidy-tuesday-kenya-population-by-age-data" class="section level4">
+<h4>Read-in Tidy Tuesday Kenya population by age data</h4>
+<pre class="r"><code>d_pop_kenya_cnty &lt;- rKenyaCensus::V3_T2.3%&gt;%
+  filter(grepl(Age, pattern = &quot;\\-&quot;, ignore.case = T)==F)%&gt;%
+  filter(Age != &quot;Total&quot;)%&gt;%
+  filter(Age != &quot;Not Stated&quot;)%&gt;%
+  group_by(County)%&gt;%
+  filter(SubCounty == &quot;ALL&quot;)%&gt;%
+  ungroup()%&gt;%
+  mutate(Age = Age%&gt;%as.numeric())%&gt;%
+  filter(Age &lt; 85 &amp; Age &gt; 16)%&gt;%
+  mutate(age_cut = cut(Age%&gt;%as.numeric(), breaks = c(seq(0,85,5), Inf)))%&gt;%
+  separate(age_cut, sep = &quot;,&quot;, into = c(&quot;from&quot;, &quot;to&quot;), remove = F)%&gt;%
+  mutate_at(vars(&quot;from&quot;, &quot;to&quot;), str_replace_all, pattern = &quot;[^0-9]&quot;,&quot;&quot;)%&gt;%
+  mutate(to = as.numeric(to)-1)%&gt;%
+  mutate(clean_lab = paste0(from, &quot; - &quot;, as.character(to)), 
+         clean_lab = if_else(grepl(clean_lab, pattern = &quot;NA&quot;)==T, &quot;85+&quot;, clean_lab))%&gt;%
+  select(-c(from, to, SubCounty, Age))%&gt;%
+  group_by(County, age_cut)%&gt;%
+  filter(row_number() == 1)%&gt;%
+  mutate(tot_pop = sum(Total, na.rm = T), 
+         female_pct = round(sum(Female, na.rm = T)/tot_pop,2), 
+         male_pct = round(sum(Male, na.rm = T)/tot_pop, 2))%&gt;%
+  ungroup()
+
+d_prop_total &lt;- d_pop_kenya_cnty%&gt;%
+  select(County, age_cut, clean_lab, Male, Female)%&gt;%
+  pivot_longer(., cols = -c(&quot;County&quot;, &quot;age_cut&quot;, &quot;clean_lab&quot;),
+               names_to = &quot;sex&quot;, 
+               values_to = &quot;value&quot;)%&gt;%
+  mutate(tot_pop = sum(value, na.rm = T))%&gt;%
+  group_by(age_cut, clean_lab, sex, .add = T)%&gt;%
+  summarize(cohort_pop = sum(value, na.rm = T), 
+            pct_tot = cohort_pop/unique(tot_pop))%&gt;%
+  mutate(plot_value_pct = if_else(sex==&quot;Male&quot;, round((pct_tot*-1)*100,2), 
+                                  round(pct_tot*100, 2)))%&gt;%
+  arrange(age_cut)%&gt;%
+  ungroup()</code></pre>
+</div>
+<div id="plot-kenya-population-pyramid-by-age-distribution-and-gender" class="section level4">
+<h4>Plot Kenya population pyramid by age distribution and gender</h4>
+<pre class="r"><code>ggplot(data = d_prop_total%&gt;%arrange(desc(age_cut)),
+       aes(x = age_cut, y = plot_value_pct, fill = sex))+ 
+  geom_bar(stat = &quot;identity&quot;, width = 1, color = &quot;white&quot;)+
+  theme_minimal(base_family = &quot;Roboto&quot;) + 
+  scale_y_continuous(breaks = c(seq(-10, 10, 1)), labels = function(y) paste0(abs(y), &quot;%&quot;))+ 
+  scale_x_discrete(labels = unique(d_prop_total$clean_lab)) + 
+  scale_fill_manual(name = &quot;Kenya&quot;, values = c(&quot;royalblue4&quot;, &quot;royalblue1&quot;)) + 
+  coord_flip() + 
+  labs(x = &quot;&quot;, 
+       y = &quot;&quot;, 
+       title = &quot;Kenya Age Pyramid&quot;, 
+       subtitle = &quot;Population by sex and age group, 2019, % of Total&quot;, 
+       fill = &quot;&quot;, 
+       caption = &quot;Source: Shelmith Kariuki (2020). \n
+       rKenyaCensus: 2019 Kenya Population and Housing Census Results. R package version 0.0.2&quot;)+
+  dark_theme_minimal()+
+  theme(legend.position = &quot;top&quot;, 
+        legend.direction = &quot;horizontal&quot;)</code></pre>
+<p><img src="/post/2021-01-23-tidytuesday-kenya-italy-population-by-age-cohort_files/figure-html/figTTKenya-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
+</div>
+<div id="inspiration-from-the-economist-evaluating-italian-aging-population" class="section level4">
+<h4>Inspiration from The Economist evaluating Italian aging population</h4>
+<p><em>Magazine Title:</em> The Next Frontier</p>
+<p><em>Article Title:</em> Italy; Their Generation</p>
+<p><em>Article Page:</em> 35</p>
+<p><em>Graph:</em> The Italian Exception</p>
+<p><em>Data Source:</em> eurostat</p>
+<p><em>Data Table Title:</em> demo.pjan</p>
+<p><em>Data Table Code:</em> tps00001</p>
+<p><em><a href="" title="https://ec.europa.eu/eurostat/web/population-demography-migration-projections/data/main-tables">Data Base Link:</a></em></p>
+<p>I have read the data in locally, but there is also a great API wrapper <a href="https://cran.r-project.org/web/packages/eurostat/index.html">eurostat package</a> that can be used.</p>
+<pre class="r"><code>data_path &lt;- &quot;../../static/data/tt-eurostat-italy/&quot;
+
+age_cut &lt;- seq(0,85,5)
+
+fname &lt;- dir_ls(data_path, regexp = &quot;.tsv&quot;)
+
+d &lt;- read_tsv(fname, col_names = T)%&gt;%
+  select(contains(&quot;unit&quot;), `2017`)%&gt;%
+  separate(.,col = &quot;unit,age,sex,geo\\time&quot;, sep=&quot;,&quot;, into = c(&quot;unit&quot;, &quot;age&quot;, &quot;sex&quot;, &quot;geo&quot;))%&gt;%
+  filter(geo %in% c(&quot;IT&quot;, &quot;EU28&quot;))%&gt;%
+  filter(!age %in% c(&quot;TOTAL&quot;, &quot;UNK&quot;))%&gt;%
+  filter(!sex == &quot;T&quot;)%&gt;%
+  filter(age != &quot;Y_LT1&quot; , age !=&quot;Y_OPEN&quot;)%&gt;%
+  mutate(age = as.numeric(str_replace_all(age, pattern=&quot;Y&quot;, &quot;&quot;)), 
+         value_2017 = as.numeric(str_replace_all(`2017`, pattern=&quot;[^0-9]&quot;, &quot;&quot;)), 
+         age_cut = cut(age, breaks = c(seq(0,85,5), Inf)))%&gt;%
+  select(-`2017`)
+  
+
+d_sub &lt;- d%&gt;%
+  separate(age_cut, sep = &quot;,&quot;, into = c(&quot;from&quot;, &quot;to&quot;), remove = F)%&gt;%
+  mutate_at(vars(&quot;from&quot;, &quot;to&quot;), str_replace_all, pattern = &quot;[^0-9]&quot;,&quot;&quot;)%&gt;%
+  mutate(to = as.numeric(to)-1)%&gt;%
+  mutate(clean_lab = paste0(from, &quot; - &quot;, as.character(to)), 
+         clean_lab = if_else(grepl(clean_lab, pattern = &quot;NA&quot;)==T, &quot;85+&quot;, clean_lab))%&gt;%
+  select(-c(unit, from, to))%&gt;%
+  group_by(geo)%&gt;%
+  mutate(tot_pop = sum(value_2017, na.rm = T))%&gt;%
+  group_by(sex, age_cut, clean_lab, add = T)%&gt;%
+  summarize(cohort_pop = sum(value_2017, na.rm = T), 
+            pct_tot = cohort_pop/unique(tot_pop))%&gt;%
+  mutate(plot_value_pct = if_else(sex==&quot;M&quot;, round((pct_tot*-1)*100,2), 
+                                  round(pct_tot*100, 2)))%&gt;%
+  arrange(geo, age_cut)%&gt;%
+  ungroup()</code></pre>
+</div>
+<div id="plot-italy-population-pyramid-by-age-distribution-and-gender" class="section level4">
+<h4>Plot Italy population pyramid by age distribution and gender</h4>
+<pre class="r"><code>eu28_bar &lt;- filter(d_sub, geo == &quot;EU28&quot;)%&gt;%
+  select(age_cut, sex, plot_value_pct)
+
+ggplot(data = filter(d_sub, geo==&quot;IT&quot;)%&gt;%arrange(geo, age_cut), 
+       aes(x = age_cut, y = plot_value_pct, fill = sex))+ 
+  geom_bar(stat = &quot;identity&quot;, width = 1, color = &quot;white&quot;)+
+  geom_errorbar(data=filter(d_sub, geo==&quot;EU28&quot;)%&gt;%arrange(geo, age_cut), 
+                aes(ymax = plot_value_pct, ymin = plot_value_pct, 
+                    color = &quot;goldenrod4&quot;), size = 1.85)+
+  theme_minimal(base_family = &quot;Roboto&quot;) + 
+  scale_y_continuous(breaks = c(seq(-10, 10, 1)), 
+                     labels = function(y) paste0(abs(y), &quot;%&quot;))+ 
+  scale_x_discrete(labels = unique(d_sub$clean_lab)) + 
+  scale_fill_manual(name = &quot;Italy&quot;, values = c(&quot;royalblue4&quot;, &quot;royalblue1&quot;)) + 
+  scale_color_manual(name = &quot;EU28&quot;, values = &quot;goldenrod4&quot;, labels = NULL)+
+  coord_flip() + 
+  labs(x = &quot;&quot;, 
+       y = &quot;&quot;, 
+       title = &quot;The Italian Exception&quot;, 
+       subtitle = &quot;Population by sex and age group, 2017, % of Total&quot;, 
+       fill = &quot;&quot;, 
+       caption = &quot;Source: Eurostat&quot;)+
+  theme(legend.position = &quot;top&quot;, 
+        legend.direction = &quot;horizontal&quot;)</code></pre>
+<p><img src="/post/2021-01-23-tidytuesday-kenya-italy-population-by-age-cohort_files/figure-html/figEconItaly-1.png" width="1056" style="display: block; margin: auto auto auto 0;" /></p>
+</div>
+</div>
