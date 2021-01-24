@@ -222,7 +222,7 @@ ggplot(data = filter(d_sub, geo=="IT")%>%arrange(geo, age_cut),
 ```
 
 
-[1]: "https://www.siq-blog.com/2020/02/25/tidytuesday-2020-wk9/"
-[2]: "https://www.siq-blog.com/2019/01/21/visualization-practice-in-r-economist-replication/"
-[3]: "https://ec.europa.eu/eurostat/web/population-demography-migration-projections/data/main-tables"
+[1]: https://www.siq-blog.com/2020/02/25/tidytuesday-2020-wk9/
+[2]: https://www.siq-blog.com/2019/01/21/visualization-practice-in-r-economist-replication/
+[3]: https://ec.europa.eu/eurostat/web/population-demography-migration-projections/data/main-tables
 [4]: https://cran.r-project.org/web/packages/eurostat/index.html
