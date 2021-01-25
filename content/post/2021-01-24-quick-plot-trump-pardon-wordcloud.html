@@ -1,0 +1,207 @@
+---
+title: Quick Plot - Trump Pardon Wordcloud
+author: Stuart Quinn
+date: '2021-01-24'
+slug: quick-plot-trump-pardon-wordcloud
+categories:
+  - Politics
+tags:
+  - DataViz
+  - TextAnalysis
+---
+
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<link href="/rmarkdown-libs/wordcloud2/wordcloud.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/wordcloud2/wordcloud2-all.js"></script>
+<script src="/rmarkdown-libs/wordcloud2/hover.js"></script>
+<script src="/rmarkdown-libs/wordcloud2-binding/wordcloud2.js"></script>
+
+
+<div id="u.s.-presidential-pardon-power." class="section level3">
+<h3>U.S. Presidential pardon power….</h3>
+<p>Out with the old and in with the new. Not before the age old tradition of U.S. presidential pardons (or “Executive Clemency”). Similar to previous presidents, Trump primarily leveraged this immediately prior to his departure. Dissimilar to his predecessors, the level and magnitude of the original charges being pardoned.</p>
+<p>For brevity, I have pulled down the <a href="https://en.wikipedia.org/wiki/List_of_people_granted_executive_clemency_by_Donald_Trump">list from Wikipedia</a>, which assuredly introduces some bias. The full official list from the U.S. Department of Justice can be found <a href="https://www.justice.gov/pardon/pardons-granted-president-donald-trump#Jan192021">here</a>.</p>
+<pre class="r"><code>if(!require(pacman)){
+  install.packages(&quot;pacman&quot;)
+  library(pacman)
+}
+
+p_load(tidyverse, tidytext, textdata, textclean,
+       htmlwidgets, webshot,
+       fs, tools, rvest, lubridate, janitor, purrr, wordcloud2)
+
+# devtools::install_github(&quot;ropensci/genderdata&quot;)
+# Additional pacakages, not used: gender, genderdata, devtools
+# Extract States from Sentencing Court 
+state_pattern_detect &lt;- paste0(paste0(&quot;.*\\b(&quot;, paste0(state.name, collapse=&quot;|&quot;),
+                                      &quot; |District of Columbia&quot;), &quot;)\\b.*&quot;)
+
+# Sentiment to determine what types of sentiment is within the notes about
+# the pardon
+nrc_sentiment &lt;- get_sentiments(&quot;nrc&quot;)%&gt;%
+  group_by(word)%&gt;%
+  mutate(all_sentiment = paste0(sentiment, collapse = &quot; | &quot;))%&gt;%
+  filter(row_number() == 1)%&gt;%
+  ungroup()</code></pre>
+<div id="read-in-data-and-perform-some-basic-cleaning" class="section level4">
+<h4>Read-in data and perform some basic cleaning</h4>
+<ol style="list-style-type: decimal">
+<li>Read data with rvest package</li>
+<li>Clean dates, extract jurisdiction state</li>
+<li>Clean up text by removing certain terms, stopwords, numbers, etc.</li>
+<li>Use tidytext to create term frequency data frame</li>
+<li><strong>bonus:</strong> for fun we add some sentiment data</li>
+</ol>
+<pre class="r"><code># Link to wiki on the topic
+pardon_url &lt;- &quot;https://en.wikipedia.org/wiki/List_of_people_granted_executive_clemency_by_Donald_Trump&quot;
+
+#xpath of table
+tbl_xpath &lt;- &quot;//*[@id=&#39;mw-content-text&#39;]/div[1]/table[2]&quot;
+
+# Read in data and make adjustment to column header names
+# Extract state jurisdictions, adjust dates
+# **Primary Bonus Chart Dataset**
+d_in_tbl &lt;- read_html(pardon_url)%&gt;%
+  html_node(xpath = tbl_xpath)%&gt;%
+  html_table(., header = T, trim = T, fill = T)%&gt;%
+  clean_names(.)%&gt;%
+  set_names(., ~str_sub(., 0, nchar(.)-3))%&gt;%
+  mutate(date_of_pardon = as.Date(date_of_pardon, format = &quot;%B %d, %Y&quot;)%&gt;%
+           ymd(.), 
+         state_full = gsub(state_pattern_detect, &quot;\\1&quot;, court), 
+         first_name = gsub( &quot; .*$&quot;, &quot;&quot;,name))%&gt;%
+  separate(date_of_pardon, sep=&quot;-&quot;, 
+           into=c(sprintf(&quot;date_%s&quot;, c(&quot;yr&quot;, &quot;mo&quot;, &quot;day&quot;))), 
+           remove = F)%&gt;%
+  rename(note = no)
+
+# Create text file by uniting relevant columns
+d_text_full &lt;- d_in_tbl%&gt;%
+  select(name, offense, note)%&gt;%
+  unite(&quot;text&quot;, c(&quot;offense&quot;, &quot;note&quot;), sep = &quot; &quot;)%&gt;%
+  mutate(text = textclean::replace_names(text, replacement = &quot;&quot;), 
+         name_id = row_number())%&gt;%
+  mutate(text = str_replace_all(text, pattern = &quot;[0-9]&quot;, &quot; &quot;))
+
+# Get word counts **Primary WordCloud Plot Dataset**
+d_word_freq_all &lt;- d_text_full%&gt;%
+  unnest_tokens(word, text)%&gt;%
+  anti_join(stop_words)%&gt;%
+  count(word, sort = T)%&gt;%
+  inner_join(nrc_sentiment)%&gt;%
+  filter(!word %in% c(&quot;trump&quot;, &quot;pardon&quot;))
+
+d_word_freq_name &lt;- d_text_full%&gt;%
+  group_by(name)%&gt;%
+  unnest_tokens(word, text)%&gt;%
+  ungroup()%&gt;%
+  anti_join(stop_words)%&gt;%
+  count(word, name, sort = T)%&gt;%
+  ungroup()%&gt;%
+  filter(!word %in% c(&quot;trump&quot;, &quot;pardon&quot;))
+
+d_sentiment &lt;- d_text_full%&gt;%
+  unnest_tokens(word, text)%&gt;%
+  anti_join(stop_words)%&gt;%
+  inner_join(nrc_sentiment)%&gt;%
+  count(word,sentiment, sort = T)%&gt;%
+  ungroup()
+
+d_bing_sentiment &lt;- d_text_full%&gt;%
+  unnest_tokens(word, text)%&gt;%
+  anti_join(stop_words)%&gt;%
+  inner_join(get_sentiments(&quot;bing&quot;))
+
+d_bing_word_cnt &lt;- d_text_full%&gt;%
+  unnest_tokens(word, text)%&gt;%
+  anti_join(stop_words)%&gt;%
+  inner_join(get_sentiments(&quot;bing&quot;))%&gt;%
+  count(word, sentiment, sort = T)%&gt;%
+  ungroup()</code></pre>
+</div>
+<div id="wordcloud-for-all-text-associated-with-trump-pardons-where-the-word-occurs-more-than-4-times" class="section level4">
+<h4>Wordcloud for all text associated with Trump pardons, where the word occurs more than 4 times</h4>
+<pre class="r"><code>p_wc &lt;- d_word_freq_all%&gt;%
+  filter(n &gt; 4)%&gt;%
+  wordcloud2(.,  shape = &quot;pentagon&quot;, size = 1,
+           maxRotation = -pi/6, rotateRatio = .2,
+           color = &quot;random-light&quot;, backgroundColor = &quot;black&quot;)
+
+p_wc</code></pre>
+<div id="htmlwidget-1" style="width:960px;height:864px;" class="wordcloud2 html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"word":["conspiracy","fraud","guilty","law","prison","tax","united","scheme","money","possession","sentence","cocaine","president","aiding","county","justice","mail","illegal","supported","crime","court","defraud","obstruction","time","statement","congressman","government","investigation","theft","violation","armed","criminal","evasion","foreign","honest","murder","possess","securities","bank","commission","deprivation","exchange","failing","felony","imprisonment","involvement","killing","management","military","offense","pay","police","probation","substance","assault","attorney","bribery","counsel","denied","enforcement","felon","fire","friend","gambling","governor","including","information","jury","land","officer","related","robbery","scandal","stolen","war","witness"],"freq":[60,58,37,21,21,20,20,19,17,17,17,15,15,14,14,14,13,12,12,11,10,10,10,10,9,8,8,8,8,8,7,7,7,7,7,7,7,7,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],"fontFamily":"Segoe UI","fontWeight":"bold","color":"random-light","minSize":0,"weightFactor":3,"backgroundColor":"black","gridSize":0,"minRotation":-0.785398163397448,"maxRotation":-0.523598775598299,"shuffle":true,"rotateRatio":0.2,"shape":"pentagon","ellipticity":0.65,"figBase64":null,"hover":null},"evals":[],"jsHooks":{"render":[{"code":"function(el,x){\n                        console.log(123);\n                        if(!iii){\n                          window.location.reload();\n                          iii = False;\n\n                        }\n  }","data":null}]}}</script>
+<pre class="r"><code># Function to generate plot locally 
+# Code sourced from here w/ minor adjustments: http://rstudio-pubs-static.s3.amazonaws.com/564823_960901304f4e4853ba7dbc93eb4bc499.html
+
+# f_wc_widget &lt;- function(widget,path=getwd(),filename=&quot;file.png&quot;){
+#   require(htmlwidgets)
+#   require(webshot)
+#   saveWidget(widget,&quot;tmp.html&quot;,selfcontained = F)
+#   file &lt;- paste(path,filename,sep = &quot;/&quot;)
+#   webshot(&quot;tmp.html&quot;,file,delay = 10,vwidth = 1024,vheight = 768)
+#   file.remove(&quot;tmp.html&quot;)
+#   paste0(&quot;![&quot;,file,&quot;](&quot;,file,&quot;)\n\n&quot;) %&gt;% cat()
+# }
+# 
+# f_wc_widget(p_wc, filename = &quot;trumpPardon.png&quot;)</code></pre>
+</div>
+<div id="bonus-plots" class="section level4">
+<h4>Bonus Plots</h4>
+<ol style="list-style-type: decimal">
+<li>Pardons by term year</li>
+<li>Pardons by original prosecuting jurisdiction</li>
+<li>Top terms usage broken down by positive and negative sentiment</li>
+</ol>
+<pre class="r"><code>p1 &lt;- d_in_tbl%&gt;%
+  mutate(term_year = case_when(
+    date_of_pardon &lt; ymd(&quot;2018-01-21&quot;) ~ &quot;1. First Year of Term&quot;, 
+    date_of_pardon &gt; ymd(&quot;2018-01-21&quot;) &amp; 
+      date_of_pardon &lt; ymd(&quot;2019-01-21&quot;) ~ &quot;2. Second Year of Term&quot;, 
+    date_of_pardon &gt; ymd(&quot;2019-01-21&quot;) &amp; 
+      date_of_pardon &lt; ymd(&quot;2020-01-21&quot;) ~ &quot;3. Third Year of Term&quot;, 
+    TRUE ~ &quot;4. Final Term&quot;))%&gt;%
+  group_by(term_year)%&gt;%
+  summarize(cnt = n())%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = term_year, y = cnt))+
+  coord_flip()+
+  labs(x = &quot;Term&quot;, 
+       y = &quot;# Pardons&quot;)+
+  theme_minimal()
+
+# Pardons by Jurisdiction 
+
+p2 &lt;- d_in_tbl%&gt;%
+  group_by(state_full)%&gt;%
+  summarize(cnt = n())%&gt;%
+  ggplot()+
+  geom_bar(stat = &quot;identity&quot;, aes(x = reorder(state_full,cnt), y = cnt))+
+  coord_flip()+
+  labs(x = &quot;Orig. sentencing \n jurisdiction&quot;, 
+       y = &quot;# of Pardons&quot;)+
+  theme_minimal()
+
+# Sentiment of top 10 positive and negative terms by term frequency
+
+p3 &lt;- d_bing_word_cnt%&gt;%
+  group_by(sentiment)%&gt;%
+  top_n(10)%&gt;%
+  ungroup()%&gt;%
+  mutate(word = reorder(word, n))%&gt;%
+  filter(!word %in% c(&quot;trump&quot;, &quot;pardon&quot;))%&gt;%
+  ggplot(aes(n, word, fill = sentiment))+
+  scale_fill_manual(values = c(&quot;darkred&quot;, &quot;navy&quot;))+
+  geom_col(show.legend = F)+
+  facet_wrap(~sentiment, scales = &quot;free_y&quot;)+
+  labs( x= &quot;Contribution to sentiment&quot;, 
+        y = NULL)+
+  theme_bw()
+
+p1</code></pre>
+<p><img src="/post/2021-01-24-quick-plot-trump-pardon-wordcloud_files/figure-html/figBonusPlots-1.png" width="768" style="display: block; margin: auto auto auto 0;" /></p>
+<pre class="r"><code>p2</code></pre>
+<p><img src="/post/2021-01-24-quick-plot-trump-pardon-wordcloud_files/figure-html/figBonusPlots-2.png" width="768" style="display: block; margin: auto auto auto 0;" /></p>
+<pre class="r"><code>p3</code></pre>
+<p><img src="/post/2021-01-24-quick-plot-trump-pardon-wordcloud_files/figure-html/figBonusPlots-3.png" width="768" style="display: block; margin: auto auto auto 0;" /></p>
+</div>
+</div>
