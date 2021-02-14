@@ -1,0 +1,260 @@
+---
+title: 'Quick Plot - Fannie Mae Public API '
+author: 'Stuart Quinn'
+date: '2021-02-13'
+slug: quick-plot-fannie-mae-public-api
+categories:
+  - Housing
+  - R
+  - API
+tags:
+  - R
+  - Purrr
+  - Housing
+---
+
+### Fannie Mae Public API - The Exchange
+
+In previous posts, we have reviewed varying sources and R packages for reading in U.S. housing data. A few years back, Fannie Mae began exposing a limited set of end points through [**The Exchange**][1], which allows the public to quickly grab a variety of key indicators tracked by Fannie Mae economists. 
+
+The API makes building a quick set of visuals that can be updated frequently to capture new economic data. A free account is required to utilize the service and details around setup can be found on The Exchange site [here][2]. Once you have an account, you will need to set your provisioned token in R to make calls. The token does get refreshed routinely by Fannie Mae so it may need to be reset over time. 
+
+```{r adminSetup, echo = T, eval = T, warning = F, message = F, highlight = T}
+
+if(!require(pacman)){
+  install.packages("pacman")
+  library(pacman)
+}
+
+
+p_load(tidyverse, jsonlite, httr, lubridate, scales, purrr, zoo, blogdown, knitr)
+
+```
+
+#### About the Data: Housing Indicators
+
+Fannie Mae offers a variety of data sets through multiple endpoints. For this post, we'll be hitting the housing indicators endpoint, which is the data used to underpin [Fannie Mae's housing forecasts][3].
+
+Once you are logged in with your account the API documentation for this endpoint can be found [here][4]. 
+
+Our basic process is as follows: 
+
+1. First we set our token in our R Env
+
+2. Then create API URL call - in our case all indicators from 2014 to 2022 (incl. forecasts)
+
+3. Pull-in all of the data and put it into a tidy format
+
+4. Pull out the most recent data by month (data set includes original and revisions)
+
+5. Smooth by averaging data over 3 quarters
+
+6. Plot the data
+
+I am pulling all the data at once, but the commented section below, pulls back a single year, single indicator to familiarize yourself prior to making larger calls. 
+
+```{r getFNMAApi, echo = T, eval = T, warning = F, message=F, highlight = T}
+
+############################################
+# User input required
+# Set token value to variable
+# You can set this as a sys.environ variable
+# however, it changes somewhat frequently
+#############################################
+
+# req_tok <- "YOUR_TOKEN_HERE"
+# Sys.setenv(FNMA_EXCHANGE = req_tok)
+
+# Build multiple URLs to pull back multiple years of data
+d_url_multiple <- sprintf("https://api.theexchange.fanniemae.com/v1/housing-indicators/data/years/%s", c(2014:2022))
+
+
+# SAMPLE DATA ####
+# Get single year data file from API into a tidy format
+# ***NOTE*** Note ticks around the Authorization to pass to the header file
+# ***NOTE*** If you change the req_tok variable above, it is passed through the header
+
+# df_single <- GET(d_url, content_type_json(), add_headers(`Authorization`= req_tok))%>%
+#   content(., as="text", encoding="UTF-8")%>%
+#   fromJSON(flatten = TRUE)%>%
+#   bind_rows(.)%>%
+#   mutate_if(is.list, simplify_all)%>%
+#   unnest()%>%
+#   unnest(points)
+
+
+# Pass our vector of URLs to pull the data and return a combined tidy data frame
+
+d_list_mltpl <- list()
+for(i in seq_along(d_url_multiple)){
+  d_list_mltpl[[i]] <- GET(d_url_multiple[i], content_type_json(), add_headers(`Authorization`=Sys.getenv("FNMA_EXCHANGE")))%>%
+    content(., as="text", encoding="UTF-8")%>%
+    fromJSON(flatten = TRUE)%>%
+    bind_rows(.)%>%
+    mutate_if(is.list, simplify_all)%>%
+    unnest(cols = everything())%>%
+    unnest(cols = everything())
+  
+  d_tidy_mltpl <- d_list_mltpl%>%
+    bind_rows(.)
+  
+}
+
+# Local file to avoid continuously updating token 
+data_path <- "../../static/data/fnma_api/"
+
+if(length(d_tidy_mltpl) == 1){
+  d_tidy_multpl <- dir_ls(data_path, regexp= ".csv")%>%
+    read_csv(., )
+}else{
+  d_tidy_multipl <- d_tidy_mltpl
+}
+
+```
+
+
+#### Cleaning Up the Data
+
+The data set returned is pretty clean and has most everything you would need. We make a few minor tweaks to clean up labels and define certain columns that we'll use for purposes of plotting multiple data sets at once with the purrr and ggplot2 packages. 
+
+**Data changes**
+
+1. Remove end-of-year aggregates (keep quarterly observations)
+
+2. Convert quarterly dates to a full date %Y-%m-%d
+
+3. Clean up labels and titles 
+
+4. Create a 3 quarter rolling average for values by indicator - this is what we'll plot
+
+5. Create a variable: break_by_plot which we'll use in our plots for the y-scale
+
+```{r dataClean, echo = T, eval = T, warning = F, message=F, highlight = T}
+
+d_quarter <- d_tidy_mltpl%>%
+  filter(quarter != "EOY")%>%
+  mutate(quarter = as.numeric(str_replace_all(quarter, "[^0-9]", "")), 
+         dt_mo = case_when(quarter == 1 ~ 1, 
+                           quarter == 2 ~ 4, 
+                           quarter == 3 ~ 7, 
+                           quarter == 4 ~ 10), 
+         dt_full = ymd(paste(year, dt_mo, "01", sep="-")), 
+         value = as.numeric(value), 
+         effectiveDate = ymd(effectiveDate))%>%
+  rename(indicator_nm = `indicator-name`, 
+         unit_typ = unit)%>%
+  group_by(dt_full, indicator_nm)%>%
+  slice(which.max(effectiveDate))%>%
+  ungroup()%>%
+  arrange(indicator_nm, dt_full)%>%
+  mutate(indicator_nm = gsub("-", replacement = " ", indicator_nm)%>%
+           str_to_title(.), 
+         forecast = ifelse(forecast == "TRUE", "Estimate", "Actual"))%>%
+  group_by(indicator_nm)%>%
+  mutate(qtr3_avg = zoo::rollmean(value, k = 3, fill = NA),
+         break_by_plot = case_when(
+           max(qtr3_avg, na.rm = T) > 5000 ~ 1250,
+           max(qtr3_avg, na.rm = T) > 3000 & max(qtr3_avg, na.rm = T) < 5000 ~ 500,
+           max(qtr3_avg, na.rm=T) > 100 & max(qtr3_avg, na.rm = T) < 3000 ~ 125, 
+           max(qtr3_avg, na.rm=T) > 10 ~ 5, 
+           TRUE ~ as.numeric(0.5)))%>%
+  ungroup()
+
+```
+
+
+
+#### Plotting with purrr
+
+In order to get a quick view of all the different indicators, we use dplyr and purrr::pmap function. It is not the most friendly to read and the plot formatting certainly leaves something to be desired....What it lacks in that arena, it makes up for by allowing you to quickly view multiple measures quickly. 
+
+The basic steps are: 
+1. Filter data set for desired variables
+
+2. Group by descriptive variables that you want to use in your plot
+
+3. Nest on those variables, which creates a new column called **data** that is a nested list containing the values you are plotting (we pass this to the ggplot function)
+
+4. Create a new column with all of your plots by using the function pmap. The pmap function is similar to a for loop or lapply -- it accepts a list of variables to iterate over with any function of your choosing (in this case - ggplot). 
+**In general: pmap(list(var1, var2, var3, var4), ~function())**
+**In our case: We pass the data (..1), the indicator name for title (..2), the unit of measure for the subtitle (..3) and the y scale breaks for each plot (..4)**
+
+5. Print the new column containing all of our plots (plots_by_indicator)
+
+#### Plot all percent metrics
+
+```{r pctFigures, eval = T, echo = T, warning = F, message = F, highlight = T, fig.align = "left", fig.height = 8, fig.width = 11}
+
+p_pct_all <- d_quarter%>%
+  filter(grepl(unit_typ, pattern = "percent", ignore.case = T)==T)%>%
+  group_by(indicator_nm, unit_typ, break_by_plot)%>%
+  nest()%>%
+  mutate(plot_by_indicator = 
+    pmap(list(data, indicator_nm, unit_typ, break_by_plot),
+        ~ggplot(data = ..1)+
+        geom_line(aes(x = dt_full, y = qtr3_avg, 
+                    linetype = forecast, color = forecast), 
+                    size = 1.3)+
+        scale_color_manual(values = c("dodgerblue", "darkred"))+
+        labs(title = gsub("-", replacement = " ", ..2),
+                     subtitle = ..3,
+                      x = NULL, 
+                      y = NULL)+
+        scale_x_date(date_breaks = "6 months")+
+        scale_y_continuous(breaks = c(seq(0,ceiling(max(..1$qtr3_avg, na.rm = T)), 
+                                                    break_by_plot)), 
+                           limits = c(0, ceiling(max(..1$qtr3_avg, na.rm = T))))+
+                  theme_minimal()+
+                  theme(axis.text.x = element_text(angle=90), 
+                        legend.position = "top", 
+                        legend.title = element_blank())))
+
+p_pct_all$plot_by_indicator
+```
+
+
+#### Plot all unit/dollar metrics
+
+```{r unitFigures, eval = T, echo = T, warning = F, message = F, highlight = T, fig.align = "left", fig.height = 8, fig.width = 11}
+
+p_thous_unit <- d_quarter%>%
+  filter(grepl(unit_typ, pattern = "thous", ignore.case=T)==T)%>%
+  filter(grepl(unit_typ, pattern = "unit", ignore.case = T)==T)%>%
+  filter(grepl(indicator_nm, pattern = "condo", ignore.case == T)==F)%>%
+  group_by(indicator_nm, unit_typ, break_by_plot)%>%
+  nest()%>%
+  mutate(plot_by_indicator = 
+        pmap(list(data, indicator_nm, unit_typ, break_by_plot),
+        ~ggplot(data = ..1)+
+        geom_line(aes(x = dt_full, y = qtr3_avg, 
+                      linetype = forecast, color = forecast), 
+                      size = 1.3)+
+        scale_color_manual(values = c("dodgerblue", "darkred"))+
+        labs(title = gsub("-", replacement = " ", ..2),
+            subtitle = ..3,
+            x = NULL, 
+            y = NULL)+
+        scale_x_date(date_breaks = "6 months")+
+        scale_y_continuous(breaks = 
+                             c(seq(0,ceiling(max(..1$qtr3_avg, na.rm = T)), 
+                              break_by_plot)), 
+                          limits = c(0, ceiling(max(..1$qtr3_avg, na.rm = T))))+
+        theme_minimal()+
+        theme(axis.text.x = element_text(angle=90), 
+              legend.position = "top", 
+              legend.title = element_blank())))
+
+p_thous_unit$plot_by_indicator
+
+```
+
+
+#### Conclusions 
+
+This is just a quick overview of the API and there are a number of other nuances. The purpose of this post is to simply demonstrate a centralized source where you can quickly pull down a variety of important housing measures. There are a ton of different potential uses, particularly evaluating forecast accuracy since original and revisions are published. 
+
+
+[1]: https://theexchange.fanniemae.com/
+[2]: https://theexchange.fanniemae.com/account/register
+[3]: https://www.fanniemae.com/research-and-insights/forecast
+[4]: https://theexchange.fanniemae.com/public-apis/housing-pulse/documentation#housing%20pulse
