@@ -297,7 +297,5 @@ m1_cll
 
 
 
-#### Citations  
-
 [1]: https://apps.hud.gov/pub/chums/  
 [2]: https://www.fhfa.gov/Media/PublicAffairs/Pages/FHFA-Announces-Conforming-Loan-Limits-for-2022.aspx  
