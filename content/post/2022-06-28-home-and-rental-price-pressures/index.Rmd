@@ -1,0 +1,205 @@
+---
+title: Home and Rental Price Pressures
+author: Stuart Quinn
+date: '2022-06-28'
+slug: home-and-rental-price-pressures
+categories:
+  - Housing
+  - R
+  - Economy
+tags:
+  - DataViz
+  - Home Prices
+  - Housing
+---
+
+### Home Prices
+
+There are a number of home price indices in the marketplace, which measure different aspects of home price appreciation (or depreciation) based on completed real-estate transactions. Each index has differences in methodologies, which one can infer how aspects of national or lower geography markets are performing. 
+
+The detailed technical detail has been linked and we'll simply outline some of the key differences: 
+
+1. **Case-Shiller House Price Index (HPI)** - 20 City 
+>>The S&P CoreLogic Case-Shiller Home Price Indices are calculated monthly using a three-month moving average. Index levels are published with a two-month lag and are released at 9 am EST on the last Tuesday of every month.**([details][1]). 
+
+This measure can be used for identifying run-ups, particularly in dense urban areas and uses a value weighting method to capture shifts based on higher priced homes. However, the 3 period average can down-weight recent data. For example, in our review of April HPI readings, the results are February, March, April which means contracts signings may be as old as December (which plays into recent interest rate changes).
+
+2. **Freddie Mac Home Price Index:** 
+>>The Freddie Mac House Price Index (FMHPI) provides a measure of typical price inflation for houses within the United States. Values are calculated monthly and released at the end of the following month. The FMHPI is based on an ever expanding database of loans purchased by either Freddie Mac or Fannie Mae.([details][2]). 
+
+The multiple levels of geography make this index valuable and a great check or benchmark against other measures. One potential gap is the availability of non-conforming or jumbo loans which are not eligible for Fannie and Freddie purchase. This could potentially cause gaps in higher priced urban markets. 
+
+3. **FHFA Purchase Only Index:** Similar to Freddie HPI in coverage and scope, the loan origination date is used as the relevant transaction date. ([details][3])
+
+4. **Zillow Home Value Index:**
+>>The Zestimate is generated through an ensemble of machine learning models and incorporates data from a variety of sources including public data, user-generated data and real estate data from direct feeds or multiple listing services. The Zestimate also accounts for home attributes and geographic location. An important feature of the ZHVI is that it captures appreciation solely attributable to market changes, and not from properties adding additional space or improvements.([details][4]) 
+
+One of the key benefits of this index is the rapidity with which it is available for earlier detection of emerging trends broadly across an expansive set of transactions. 
+
+All of these particular indices are published in nominal (non-real) terms. 
+
+### Getting the Data
+```{r adminSetup, echo = F, eval = T, warning = F, message = F, highlight = T}
+
+library(pacman)
+
+p_load(tidyverse, tidyquant, tigris, tidycensus, fs, tools, readr, 
+       knitr)
+
+```
+
+#### Processing Approach
+1. Setup up reference URLs and Ticker symbols from St. Louis FRED2 service
+2. Read-in data
+3. Standardize data-sets to create a singular dataset
+4. Perform month-over-month (MoM) and year-over-year (YoY) calculations
+5. Then plot and compare
+6. Review in-line with mortgage rate trends
+
+```{r getHpiData, echo = T, eval = T, warning = F, message=F, highlight = T}
+
+# Freddie mac hpi
+fre_url <- "https://www.freddiemac.com/fmac-resources/research/docs/fmhpi_master_file.csv"
+# FHFA Purchase Only and Case-Shiller 20-City Composite index
+tks <- c("HPIPONM226S", "SPCS20RSA")
+# Zillow Home Value Index
+z_url <- "https://files.zillowstatic.com/research/public_csvs/zhvi/Metro_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv?t=1656433844"
+
+
+# Read in Freddie Mac Data
+d_fre_in <- read_csv(fre_url)
+
+# Read in FHFA and CS
+d_fhfa_cs <- tq_get(tks, get = "economic.data", from = "2000-01-01")%>%
+  mutate(symbol = if_else(grepl(symbol, pattern = "HPIP") == T, "FHFA Purchase Index", "S&P - Case-Shiller 20-City"))
+
+# Read in Zillow
+d_zillow <- read.csv(z_url)%>%
+  select(RegionID, 
+         RegionName, 
+         RegionType, 
+         StateName,
+         starts_with("X"))%>%
+  pivot_longer(-c(1:4), 
+               names_to = "date", 
+               values_to="value")%>%
+  mutate(date = gsub("X", replacement="", date)%>%
+           str_replace_all(pattern="[.]", 
+                           replacement="-", 
+                           string = .)%>%
+           ymd(.))
+
+# Filter Freddie Mac File to National Level and Seasonally Adjusted
+# Parse Dates to Align to First of the Month (for plotting)
+# Create a source reference which we will do for all 
+d_full_natl <- d_fre_in%>%
+  filter(GEO_Type == "US")%>%
+  mutate(date = ymd(paste(Year, Month, "01", sep="-")))%>%
+  select(date, value=Index_SA)%>%
+  mutate(hpi_src = "Freddie Mac")%>%
+
+  # bind in the CS and FHFA Purchase Index
+    bind_rows(., 
+              select(d_fhfa_cs, date, 
+                     hpi_src = symbol, 
+                     value = price))%>%
+  # bind in the Zillow data
+    bind_rows(., 
+              d_zillow%>% 
+                filter(RegionName == "United States")%>%
+                select(date, value)%>%
+                mutate(hpi_src = "Zillow",
+                       value = value/median(value)*100)
+              )%>%
+  # Subset data to 2000+
+    filter(year(date) > 1999)%>%
+  # Calculate Month over Month and Year-over-Year by each HPI
+    group_by(hpi_src)%>%
+    arrange(hpi_src, date)%>%
+    mutate(hpi_yoy = value/lag(value, 12) - 1, 
+           hpi_mom1 = value/lag(value, 1) -1)%>%
+    ungroup()%>%
+  # Make data long and create 
+    gather(variable, hpa_value, -c(date, hpi_src))%>%
+    mutate(variable = if_else(variable == "value", 
+                              "index_value", variable), 
+           variable_f = factor(variable, 
+                               labels = c("HPA MoM", 
+                                          "HPA YoY", 
+                                          "HPI Index")))
+
+# Create a summary of the most recent observations
+# Note Zillow has already published May figures, but 
+# for comparison purposes we'll look up May 2022
+dt_filter <- ymd("2022-05-01")
+data_as_of <- "April 2022"
+d_recent_summary <- d_full_natl%>%
+  filter(variable != "index_value")%>%
+  filter(date < dt_filter)%>%
+  group_by(hpi_src, variable_f)%>%
+  select(date, `HPI Source` = hpi_src, 
+         Measure=variable_f, Value =hpa_value)%>%
+  slice(which.max(date))%>%
+  select(-date)%>%
+  mutate(Value = round(Value*100, 2))%>%
+  arrange(Measure, `HPI Source`)
+
+```
+
+### Summary of Different Home Price Indices 
+
+
+`r knitr::kable(d_recent_summary)`
+
+
+### A Comparative View of HPA 
+
+```{r plotHPI, echo = T, eval = T, warning = F, message=F, highlight = T}
+
+p1 <- ggplot(filter(d_full_natl,variable != "index_value")%>%
+               filter(date < dt_filter))+
+  geom_line(aes(x = date, y = hpa_value,color = hpi_src), 
+              size = 1.25, stat = "identity")+
+  geom_hline(yintercept = 0, linetype = 2, color = "darkred")+
+  facet_wrap(~variable_f, ncol = 1, scales = "free_y")+
+  scale_y_continuous(labels = scales::percent)+
+  scale_color_viridis_d()+
+  labs(title = "Comparing National & Major City Home-Price Indices",
+       subtitle = paste0("Month-over-Month v. Year-over-Year: ",
+                           " Data as of ", data_as_of),
+         x = NULL,
+         y = "HPA (%)",
+         caption = str_wrap("Source: Zillow, Freddie Mac, FHFA,
+                                 FRB - FRED2, S&P", 20))+
+  theme_minimal()+
+  theme(legend.title = element_blank(),
+        legend.position = "top")
+
+
+p1
+```
+
+
+
+### A Few Comparative Points and Timing Considerations
+
+As mentioned above, the majority of these measures are lagging, therefore, they may not be fully representative of the current state of home prices and/or corrections. 
+
+1. As of June 26, 30-year fixed rate conforming mortgage rates were measured by Freddie Mac as 5.81% ([see here][5]). You would need to go back to June of 2009 to find similar rates. Assuming a 30 day lock period + delays in HPI reporting, aggregation and averaging methods, it could take until next month or June reports to fully illuminate how home prices are behaving. 
+2. More dramatic reads will likely reveal themselves in reports later in the summer based on this apt quote from Bill McBride (Calculated Risk) indicating Mortgage Backed Securities (MBS) going "no-bid" where buyers were unsure of the price due to substantial rate changes (6/10/2022). After this date, will likely represent a key period of fall-off for home prices
+3. The national trends may very well be masked by distributed adjustments that are present in specific geographies (and price-tiers). In our next post we will look at four groups of areas to look for early signaling in prices (beyond other measures which are published and already indicating a potential slowdown: e.g.MBA Weekly Mortgage Applications, Pending Sales, Reduced Listing Price, etc.)
+
+Assuming history rhymes, below are the groups of areas we will review to see if there are downward pressures emerging in specific markets: 
+
+1. Normal affected regions: Cincinnati and Cleveland, OH; Detroit, MI; Milwaukee, WI; and Kansas City.
+2. Global Financial Crisis (07-09): "Sand States" such as Miami, FL; Las Vegas, NV; Los Angeles and Riverside, CA; Phoenix, AZ
+3. Similar to 1980's Crash (Inflation and Oil Prices): Dallas and Houston, TX; New Orleans, LA; Newark, NJ; Baltimore, MD
+4. Perhaps this time will be different. If we suspect home price run-up may be associated with under-supply and long-run of low financing costs paired with a stock market correction that it might be more apt to target tech-centers and vacation home locations such as: San Francisco and San Jose, CA; Seattle, WA; Austin, TX and Denver, CO, Coer d'Alene, ID.
+
+
+
+[1]:https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-corelogic-cs-home-price-indices.pdf
+[2]:https://www.freddiemac.com/fmac-resources/research/docs/fmhpi.txt
+[3]:https://www.fhfa.gov/PolicyProgramsResearch/Research/PaperDocuments/1996-03_HPI_TechDescription_N508.pdf
+[4]:https://www.zillow.com/research/zhvi-methodology-2019-deep-26226/
+[5]:https://www.freddiemac.com/pmms
