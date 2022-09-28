@@ -154,7 +154,7 @@ d_recent_summary <- d_full_natl%>%
 
 ### A Comparative View of HPA 
 
-```{r plotHPI, echo = T, eval = T, warning = F, message=F, highlight = T}
+```{r plotHPI, echo = T, eval = T, warning = F, message=F, highlight = T, fig.width=6, fig.height = 6}
 
 p1 <- ggplot(filter(d_full_natl,variable != "index_value")%>%
                filter(date < dt_filter))+
@@ -176,9 +176,11 @@ p1 <- ggplot(filter(d_full_natl,variable != "index_value")%>%
         legend.position = "top")
 
 
-p1
+
 ```
 
+
+`r p1`
 
 
 ### A Few Comparative Points and Timing Considerations

@@ -1,0 +1,284 @@
+---
+title: 'Quick Map: Age of the Housing Stock Structure in the U.S.'
+author: Stuart Quinn
+date: '2022-07-23'
+slug: quick-map-age-of-the-housing-stock-structure-in-the-u-s
+categories:
+  - R
+  - Housing
+tags:
+  - Geo
+  - Housing
+  - Map
+---
+
+
+
+<div id="a-quick-map-of-age-of-structures-in-the-u.s." class="section level3">
+<h3>A Quick Map of Age of Structures in the U.S.</h3>
+<p>The Census captures a number of different household, housing stock and population data. One of the measures they frequently update through their annual American Community Survey (ACS), is the median age of housing units within the United States.</p>
+<p>We will build a quick map to compare the median age of units within the U.S. as of the ACS - 5 year, 2020 survey.</p>
+</div>
+<div id="read-in-data-with-tidycensus" class="section level3">
+<h3>Read in Data with Tidycensus</h3>
+<p>The U.S. Census table code for median year of structure built is: B25035_001. For future analysis, we will also provide the codes for distributions of age structure for future plotting of proportions of housing structure year built at a more granular level than state.</p>
+<pre class="r"><code># Census code for reading in median structure year
+med_yr_structure &lt;- &quot;B25035_001&quot;
+
+# We will NOT use these, but they are the total population of housing units
+# and the proportion of counts by year of age built
+
+# tot_built &lt;- &quot;B25034_001&quot;
+# built_age_cohorts &lt;- sprintf(&quot;B250034_%s&quot;,append_cohort)
+
+# Set coordinate system for projecting our map
+# See crsuggest package for alternatives
+set_crs &lt;- 2163
+
+# Get National Median 
+
+g_natl &lt;- tidycensus::get_acs(geography = &quot;us&quot;, 
+                                  variables = med_yr_structure, 
+                                  year = 2020, 
+                                  survey = &quot;acs5&quot;, 
+                                  geometry = F)
+
+# Read in State Boundaries with additional detail 
+# Remove DC and Territories
+g_state &lt;- tigris::states()%&gt;%
+  filter(!STUSPS %in% c(&quot;VI&quot;, &quot;MP&quot;, &quot;GU&quot;, &quot;PR&quot;, &quot;AS&quot;, &quot;DC&quot;))%&gt;%
+  shift_geometry()%&gt;%
+  st_transform(set_crs)
+
+# Read in Median Year of Structure Built by State for ACS-5, 2020 Survey
+# Include Geometry for Plot
+g_yr_built &lt;- tidycensus::get_acs(geography = &quot;state&quot;, 
+                                  variables = med_yr_structure, 
+                                  year = 2020, 
+                                  survey = &quot;acs5&quot;, 
+                                  geometry = T)%&gt;%
+  shift_geometry()%&gt;%
+  st_transform(set_crs)</code></pre>
+</div>
+<div id="setting-up-plot" class="section level3">
+<h3>Setting Up Plot</h3>
+<p>In order to build a map, there are a few tweaks we need to make to the data to ensure pretty labels of the median year of structure built values. In particular we need to make adjustments to labels for states in the northeast so they are legible. We also remove the District of Columbia from our plot since it is not visible.</p>
+<pre class="r"><code># Create cuts for categorizing and building colors
+start_seq &lt;- min(g_yr_built$estimate)
+seq_built &lt;- c(-Inf, 1950, 1960, 1965, 1970, 1974, 1980, 1984, 1990, +Inf)
+lab_built &lt;- c(&quot;Prior to 50&#39;s&quot;,&quot;1950-59&quot;,&quot;1960-64&quot;, &quot;1965-69&quot;, 
+               &quot;1970-74&quot;, &quot;1975-79&quot;, &quot;1980-84&quot;, &quot;1985-90&quot;, &quot;1990+&quot;)
+
+# Create a way to filter out states that need adjustments
+ne_state_shift &lt;- c(&quot;CT&quot;,&quot;DE&quot;,&quot;RI&quot;, &quot;MD&quot;, &quot;MA&quot;,&quot;NH&quot;, &quot;NJ&quot;, &quot;VT&quot;)
+
+# Create a full list of centroids of each state for our labels
+# We remove geometry because we use coords x and y 
+d_centroid &lt;- g_yr_built[,c(&quot;GEOID&quot;, &quot;NAME&quot;, &quot;estimate&quot;)]%&gt;%
+  mutate(centroid = st_centroid(geometry), 
+         x = unlist(map(centroid, 1)), 
+         y = unlist(map(centroid, 2)))%&gt;%
+  st_drop_geometry(.)%&gt;%
+  inner_join(., g_state%&gt;%
+              select(STUSPS, NAME)%&gt;%
+              st_drop_geometry(), by = c(&quot;NAME&quot;=&quot;NAME&quot;))%&gt;%
+  select(fips2 = GEOID, state_name = NAME, state_abb = STUSPS, x, y, estimate)
+
+# Extract northeast states
+# Adjust Northeast states further east (x plus) and to the south (y minus) 
+# so geom_text labels are clean and legible
+lab_repel &lt;- d_centroid%&gt;%
+  filter(state_abb %in% ne_state_shift)%&gt;%
+  mutate(x_adj = case_when(
+    state_abb == &quot;MA&quot; ~ x + 300000, 
+    state_abb == &quot;MD&quot; ~ x + 300000,
+    # state_abb == &quot;DC&quot; ~ x + 300000,
+    state_abb == &quot;RI&quot; ~ x + 200000,
+    state_abb == &quot;DE&quot; ~ x + 200000, 
+    state_abb == &quot;NJ&quot; ~ x + 200000, 
+    state_abb == &quot;NH&quot; ~ x + 200000,
+    state_abb == &quot;VT&quot; ~ x - 100000,
+    TRUE ~ x
+  ), 
+  y_adj = case_when(
+    state_abb == &quot;VT&quot; ~ y + 200000,
+    state_abb == &quot;MD&quot; ~ y - 175000,
+    state_abb == &quot;CT&quot; ~ y - 75000,
+    state_abb == &quot;RI&quot; ~ y - 55000,
+    # state_abb == &quot;DC&quot; ~ y - 55000,
+    TRUE ~ y
+  ))
+
+# Create separate object for remaining (non-Northeast) states
+# Make minor position adjustments so geom_text labels are legible (MI, FL, LA, WV)
+# Make Color coding so the estimates can be seen clearer with the fill background
+lab_centroid &lt;- d_centroid%&gt;%
+  filter(!state_abb %in% ne_state_shift)%&gt;%
+  mutate(x = case_when(
+    state_abb == &quot;MI&quot; ~ x + 75000,
+    state_abb == &quot;FL&quot; ~ x + 75000,
+    state_abb == &quot;LA&quot; ~ x - 45000,
+    state_abb == &quot;WV&quot; ~ x - 25000,
+    TRUE ~ x
+  ), 
+  y = case_when(
+    state_abb == &quot;LA&quot; ~ y - 35000, 
+    state_abb == &quot;WV&quot; ~ y - 35000,
+    state_abb == &quot;MI&quot; ~ y - 100000,
+    TRUE ~ y
+  ), 
+  color_txt = case_when(
+    state_abb == &quot;NY&quot; | state_abb == &quot;HI&quot; ~ &quot;B&quot;, 
+    TRUE ~ &quot;W&quot;
+  ))</code></pre>
+<pre class="r"><code>m &lt;- g_yr_built%&gt;%
+  mutate(plot_me = cut(estimate, breaks = seq_built, labels = lab_built, right = F))%&gt;%
+  ggplot() + 
+  geom_sf(aes(fill = plot_me), color = &quot;white&quot;, lwd = 0.1) +
+  geom_text(data = lab_centroid, aes(x = x, y = y, label = estimate, color = color_txt), 
+             size = 2.5, fontface = &quot;bold&quot;) + 
+  scale_color_manual(values = c(&quot;B&quot; = &quot;black&quot;, &quot;W&quot;= &quot;white&quot;), 
+                     guide = &quot;none&quot;) +
+  geom_segment(data = lab_repel, aes(x = x, xend = x_adj-80000,
+                                     y = y, yend = y_adj-15000)) +
+  geom_text(data = lab_repel, aes(x = x_adj, y = y_adj, label = estimate), 
+            size = 2.5, fontface = &quot;bold&quot;) +
+  # Manually adjusted in-lieu of ggrepel package
+  # ggrepel::geom_label_repel(data = lab_repel, 
+  #                          aes(x = x, y = y, label = estimate)) +
+  scale_fill_viridis_d(&quot;&quot;, option = &quot;magma&quot;, direction = -1) +
+  theme_void()+
+  labs(title = &quot;Median Year of Structure Built by State&quot;, 
+       subtitle = &quot;ACS 5-year, 2020&quot;, 
+       x = NULL,
+       y = NULL)+
+  theme(legend.position = &quot;top&quot;)
+
+
+print(m)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/plotMap-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="quick-summary-and-future-posts" class="section level3">
+<h3>Quick Summary and Future Posts</h3>
+<p>Unsurprisingly, the east coast has the oldest structures within the U.S. with the District of Columbia and New York with a corresponding median structure built year of 1954 and 1957 respectfully. Meanwhile Nevada and Arizona have newer constructed structures with the median ages of 1994 and 1990 respectfully.</p>
+<pre class="r"><code>g_yr_built%&gt;%
+  arrange(estimate)%&gt;%
+  select(State = NAME, `Year Built` = estimate)%&gt;%
+  st_drop_geometry(.)%&gt;%
+  head(10)%&gt;%
+  knitr::kable(., caption = &quot;Top 10: Oldest Median Structure Built by State&quot;)</code></pre>
+<table>
+<caption><span id="tab:dataTables">Table 1: </span>Top 10: Oldest Median Structure Built by State</caption>
+<thead>
+<tr class="header">
+<th align="left">State</th>
+<th align="right">Year Built</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">District of Columbia</td>
+<td align="right">1954</td>
+</tr>
+<tr class="even">
+<td align="left">New York</td>
+<td align="right">1957</td>
+</tr>
+<tr class="odd">
+<td align="left">Massachusetts</td>
+<td align="right">1961</td>
+</tr>
+<tr class="even">
+<td align="left">Rhode Island</td>
+<td align="right">1961</td>
+</tr>
+<tr class="odd">
+<td align="left">Pennsylvania</td>
+<td align="right">1963</td>
+</tr>
+<tr class="even">
+<td align="left">Connecticut</td>
+<td align="right">1965</td>
+</tr>
+<tr class="odd">
+<td align="left">New Jersey</td>
+<td align="right">1968</td>
+</tr>
+<tr class="even">
+<td align="left">Ohio</td>
+<td align="right">1968</td>
+</tr>
+<tr class="odd">
+<td align="left">Illinois</td>
+<td align="right">1969</td>
+</tr>
+<tr class="even">
+<td align="left">Iowa</td>
+<td align="right">1970</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>g_yr_built%&gt;%
+  arrange(desc(estimate))%&gt;%
+  select(State = NAME, `Year Built` = estimate)%&gt;%
+  st_drop_geometry(.)%&gt;%
+  head(10)%&gt;%
+  knitr::kable(., caption = &quot;Top 10: Most Recent Median Structure Built by State&quot;)</code></pre>
+<table>
+<caption><span id="tab:dataTables">Table 1: </span>Top 10: Most Recent Median Structure Built by State</caption>
+<thead>
+<tr class="header">
+<th align="left">State</th>
+<th align="right">Year Built</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Nevada</td>
+<td align="right">1994</td>
+</tr>
+<tr class="even">
+<td align="left">Arizona</td>
+<td align="right">1990</td>
+</tr>
+<tr class="odd">
+<td align="left">Georgia</td>
+<td align="right">1989</td>
+</tr>
+<tr class="even">
+<td align="left">Utah</td>
+<td align="right">1989</td>
+</tr>
+<tr class="odd">
+<td align="left">South Carolina</td>
+<td align="right">1989</td>
+</tr>
+<tr class="even">
+<td align="left">Idaho</td>
+<td align="right">1988</td>
+</tr>
+<tr class="odd">
+<td align="left">North Carolina</td>
+<td align="right">1988</td>
+</tr>
+<tr class="even">
+<td align="left">Texas</td>
+<td align="right">1987</td>
+</tr>
+<tr class="odd">
+<td align="left">Florida</td>
+<td align="right">1986</td>
+</tr>
+<tr class="even">
+<td align="left">Delaware</td>
+<td align="right">1985</td>
+</tr>
+</tbody>
+</table>
+<p>Overall, the age of housing stock within the United States is quite aged with the United States median structure being built in 1978 (or built 44 year ago at the time of the survey). Since 1978, the U.S. has implemented a significant number of improvements for safety of the structure and the populous living within the homes. As an example, the Lead Disclosure Rule or Title X was signed into law in 1992 to prevent the usage and government financing of homes requiring disclosures for structures built prior to 1972 where lead was used.</p>
+<blockquote>
+<p>Congress passed the Residential Lead-Based Paint Hazard Reduction Act of 1992, also known as Title X, to protect families from exposure to lead from paint, dust, and soil. Section 1018 of this law directed HUD and EPA to require the disclosure of known information on lead-based paint and lead-based paint hazards before the sale or lease of most housing built before 1978.</p>
+</blockquote>
+<p>Further Detail from Housing and Urban Development (HUD) <a href="https://www.hud.gov/program_offices/healthy_homes/enforcement/disclosure#:~:text=Sellers%20must%20provide%20homebuyers%20a,may%20waive%20this%20inspection%20opportunity.">here</a></p>
+<p>In future posts, we’ll explore how this varies at a more granular geographic level. The importance of age of structure should not be understated as federal, state and local agencies consider demolition of vacant homes and rehabilitation of the existing housing stock to be more efficient and resilient to future climate changes or natural disasters.</p>
+</div>

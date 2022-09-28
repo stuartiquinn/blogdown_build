@@ -1,0 +1,128 @@
+---
+title: Hurricane Ian Tracker
+author: Stuart Quinn
+date: '2022-09-27'
+slug: hurrican-ian-tracker
+categories:
+  - R
+tags:
+  - Geo
+  - Climate
+  - Map
+---
+
+### A Quick Map Tracking Hurrican Ian
+
+It is hurricane season which is beginning with an incredibly potent hurricane named Ian. 
+
+For this post, we'll create a quick interactive map to plot the forecast path as estimated by the National Oceanic and Atmospheric Administration (NOAA), National Hurricane Center. 
+
+The data used for this post can be found (here)[1]
+
+```{r adminSetup, echo = F, eval = T, warning = F, message = F, highlight = T}
+
+# Load pacman (or install, if not already)
+if(!require(pacman)){
+  library(pacman)
+  install.packages("pacman")
+}
+
+p_load(tidyverse, sf, leaflet, htmltools,
+       fs, htmlwidgets)
+
+# Enter parameters (optional)
+yr_of_interest <- 2022
+storm_of_interest <- "IAN"
+
+# URL of Source Data Estimates
+# See base site here: https://www.nhc.noaa.gov/gis/
+url_storm_of_interest <- "https://www.nhc.noaa.gov/gis/forecast/archive/al092022_5day_latest.zip"
+
+# LOCAL DOWNLOAD FLOW -- Our files are already stored locally
+
+# # Create temporary directory
+# td <- tempdir()
+# # Create temp file 
+# tf <- tempfile()
+# # Download zip file to temp directory
+# download.file(url_storm_of_interest, tf)
+# # Unzip all files
+# unzip(tf, exdir = td)
+# 
+# # Extract files of interest
+# dir_ls(td)
+# # Cone of hurricane path (polygon). Note [1] simply ignores the .shp.xml file
+# path_layer <- dir_ls(td, regexp ="al092022-019A_5day_pgn.shp" )[1]
+# # Point of estimate containing data about central path estimate
+# point_layer <-  dir_ls(td, regexp = "al092022-019A_5day_pts.shp")[1]
+# 
+# # Line through points and central part of cone
+# line_layer <- dir_ls(td, regexp = "al092022-019A_5day_lin.shp")[1]
+
+
+```
+
+####Load the Data
+
+```{r getGeoData, echo = T, eval = T, warning = F, message=F, highlight = T}
+
+path_layer <- dir_ls(paste0(getwd(),"/data/"), regexp = "pgn.shp")[1]
+point_layer <- dir_ls(paste0(getwd(), "/data/"), regexp  = "pts.shp")[1]
+line_layer <- dir_ls(paste0(getwd(), "/data/"), regexp = "lin.shp")[1]
+
+# Read in data files
+g_poly <- read_sf(path_layer)
+g_point <- read_sf(point_layer)
+g_line <- read_sf(line_layer)
+
+# Remove tempdirectory set of files to clean-up space
+
+# unlink(td)
+
+```
+
+#### Build Map 
+
+Next we will build our interactive map which includes: 
+1. Cone of the estimated path (polygon)
+2. Middle line of expected path (line)
+3. The updated estimates of variable severity (points)
+4. Additional popup functionality for the popup on each of the points
+
+```{r plotMap, echo = T, eval = T, warning = F, message=F, highlight = T, fig.align='center'}
+
+map_title <- paste(g_point$STORMNAME[1], "\n Est. as of:", g_point$ADVDATE[1])
+
+
+
+# Create popup for each of the point estimates
+popup <- paste0("Forecast TS: ", g_point$FLDATELBL,"<br>",
+                "Storm Type: ", g_point$TCDVLP, "<br>", 
+                "Est. Max Wind: ", g_point$MAXWIND,"<br>",
+                "Est. Gust: ", g_point$GUST, "<br>")
+
+ 
+
+# Build all map layers
+m <- leaflet()%>%
+  addProviderTiles("OpenTopoMap")%>%
+  addPolygons(data = g_poly, 
+              color = "black", 
+              weight = "2", 
+              fillColor="red", 
+              fillOpacity = 0.3)%>%
+  addPolylines(data = g_line)%>%
+  addCircleMarkers(data = g_point, 
+                   color = "red", 
+                   radius = 2, 
+                   # label = g_lab,
+                   labelOptions = labelOptions(noHide = F, textOnly = F),
+                   popup = popup)%>% 
+  addControl(map_title, position = "bottomright")
+
+
+m
+
+```
+
+[1]:https://www.nhc.noaa.gov/gis/
